@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Discord Bot Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        :root {
+            --primary: #7289da;
+            --secondary: #2c2f33;
+            --tertiary: #23272a;
+            --success: #43b581;
+            --danger: #f04747;
+            --warning: #faa61a;
+            --dark-bg: #36393f;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--dark-bg);
+            color: #dcddde;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .dashboard-wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* SIDEBAR */
+        .sidebar-nav {
+            width: 260px;
+            background: var(--tertiary);
+            border-right: 1px solid #1a1b1e;
+            overflow-y: auto;
+            padding-top: 20px;
+            position: fixed;
+            height: 100vh;
+            left: 0;
+        }
+
+        .sidebar-nav .server-select {
+            padding: 0 10px 20px;
+        }
+
+        .server-select select {
+            width: 100%;
+            padding: 10px;
+            background: var(--secondary);
+            color: white;
+            border: 1px solid #202225;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .sidebar-nav .nav-section {
+            margin-bottom: 10px;
+        }
+
+        .nav-section-title {
+            padding: 10px 15px;
+            color: #72767d;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-item {
+            padding: 10px 15px;
+            color: #b9bbbe;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .nav-item.active {
+            background: rgba(114, 137, 218, 0.2);
+            color: var(--primary);
+            border-left: 3px solid var(--primary);
+        }
+
+        /* MAIN CONTENT */
+        .main-content {
+            margin-left: 260px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .navbar {
+            background: var(--secondary);
+            border-bottom: 1px solid #202225;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar h1 {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .navbar-buttons {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn-logout {
+            background: var(--danger);
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+
+        .btn-logout:hover {
+            background: #f24747;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .content-header {
+            margin-bottom: 30px;
+        }
+
+        .content-header h2 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .content-header p {
+            color: #b9bbbe;
+        }
+
+        /* SECTIONS */
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* CARDS */
+        .card {
+            background: var(--secondary);
+            border: 1px solid #202225;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.2s;
+        }
+
+        .card:hover {
+            border-color: rgba(114, 137, 218, 0.3);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* STATS */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, var(--tertiary) 0%, #1e2124 100%);
+            border-left: 4px solid var(--primary);
+            padding: 20px;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .stat-box:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-label {
+            color: #72767d;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        /* FORMS */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #dcddde;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            background: var(--tertiary);
+            border: 1px solid #202225;
+            color: white;
+            border-radius: 4px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(114, 137, 218, 0.2);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        /* BUTTONS */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-block;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #6578d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(114, 137, 218, 0.4);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #3ba563;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #f24747;
+        }
+
+        /* CHECKBOXES & TOGGLES */
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .checkbox-group input {
+            width: auto;
+        }
+
+        .toggle {
+            width: 40px;
+            height: 24px;
+            background: #202225;
+            border-radius: 12px;
+            cursor: pointer;
+            position: relative;
+            transition: background 0.2s;
+            border: none;
+        }
+
+        .toggle.active {
+            background: var(--success);
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: left 0.2s;
+        }
+
+        .toggle.active::after {
+            left: 18px;
+        }
+
+        /* TABLES */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .table th {
+            background: var(--tertiary);
+            padding: 12px;
+            text-align: left;
+            color: #72767d;
+            font-weight: 600;
+            border-bottom: 1px solid #202225;
+        }
+
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #202225;
+        }
+
+        .table tr:hover {
+            background: rgba(114, 137, 218, 0.1);
+        }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: rgba(67, 181, 129, 0.2);
+            color: var(--success);
+        }
+
+        .badge-danger {
+            background: rgba(240, 71, 71, 0.2);
+            color: var(--danger);
+        }
+
+        .badge-warning {
+            background: rgba(250, 166, 26, 0.2);
+            color: var(--warning);
+        }
+
+        /* FEATURE LIST */
+        .feature-list {
+            list-style: none;
+        }
+
+        .feature-list li {
+            padding: 15px;
+            border-bottom: 1px solid #202225;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        /* GRID */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        /* INFO BOX */
+        .info-box {
+            background: rgba(114, 137, 218, 0.1);
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            color: #b9bbbe;
+        }
+
+        /* SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--tertiary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6578d3;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .sidebar-nav {
+                width: 200px;
+            }
+
+            .main-content {
+                margin-left: 200px;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 10px;
+                align-items: flex-start;
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar-nav">
+            <div class="server-select">
+                <select id="server-select" onchange="switchServer()">
+                    <option value="">📌 Select a Server</option>
+                </select>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Core</div>
+                <div class="nav-item active" onclick="switchSection('overview')">📊 Overview</div>
+                <div class="nav-item" onclick="switchSection('analytics')">📈 Analytics</div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Management</div>
+                <div class="nav-item" onclick="switchSection('moderation')">🛡️ Moderation</div>
+                <div class="nav-item" onclick="switchSection('autorole')">👥 Auto Roles</div>
+                <div class="nav-item" onclick="switchSection('welcome')">👋 Welcome</div>
+                <div class="nav-item" onclick="switchSection('logging')">📝 Logging</div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Customization</div>
+                <div class="nav-item" onclick="switchSection('commands')">⚙️ Commands</div>
+                <div class="nav-item" onclick="switchSection('prefix')">📌 Prefix</div>
+                <div class="nav-item" onclick="switchSection('music')">🎵 Music</div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Advanced</div>
+                <div class="nav-item" onclick="switchSection('settings')">🔧 Settings</div>
+                <div class="nav-item" onclick="switchSection('members')">👤 Members</div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="navbar">
+                <h1>🤖 Dashboard</h1>
+                <div class="navbar-buttons">
+                    <span id="user-info">👤 Loading...</span>
+                    <a href="/logout" class="btn-logout">🚪 Logout</a>
+                </div>
+            </div>
+
+            <div class="content">
+                <!-- Overview Section -->
+                <section id="overview" class="section active">
+                    <div class="content-header">
+                        <h2>📊 Dashboard Overview</h2>
+                        <p>Welcome to your premium bot dashboard</p>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-label">Bot Status</div>
+                            <div class="stat-value">🟢 Online</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Servers</div>
+                            <div class="stat-value" id="total-servers">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Members</div>
+                            <div class="stat-value" id="total-members">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Uptime</div>
+                            <div class="stat-value" id="uptime">--</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">ℹ️ Bot Information</div>
+                        <div class="grid-2">
+                            <div>
+                                <label style="color: #72767d;">Bot Name</label>
+                                <p id="bot-name" style="font-size: 18px; margin-top: 5px;">Loading...</p>
+                            </div>
+                            <div>
+                                <label style="color: #72767d;">Bot ID</label>
+                                <p id="bot-id" style="font-size: 18px; margin-top: 5px;">Loading...</p>
+                            </div>
+                            <div>
+                                <label style="color: #72767d;">Prefix</label>
+                                <p style="font-size: 18px; margin-top: 5px;">!</p>
+                            </div>
+                            <div>
+                                <label style="color: #72767d;">Version</label>
+                                <p style="font-size: 18px; margin-top: 5px;">1.0.0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">✨ Features</div>
+                        <ul class="feature-list">
+                            <li>
+                                <span>Moderation System</span>
+                                <span class="badge badge-success">Enabled</span>
+                            </li>
+                            <li>
+                                <span>Auto Roles</span>
+                                <span class="badge badge-success">Enabled</span>
+                            </li>
+                            <li>
+                                <span>Welcome Messages</span>
+                                <span class="badge badge-success">Enabled</span>
+                            </li>
+                            <li>
+                                <span>Custom Commands</span>
+                                <span class="badge badge-success">Enabled</span>
+                            </li>
+                            <li>
+                                <span>Music Player</span>
+                                <span class="badge badge-success">Enabled</span>
+                            </li>
+                            <li>
+                                <span>Logging & Analytics</span>
+                                <span class="badge badge-success">Enabled</span>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Moderation Section -->
+                <section id="moderation" class="section">
+                    <div class="content-header">
+                        <h2>🛡️ Moderation</h2>
+                        <p>Configure moderation rules and punishment</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">⚙️ Automod Features</div>
+                        <ul class="feature-list">
+                            <li>
+                                <span>Anti-Spam</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Anti-Invite</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Anti-Caps</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Anti-Mention Spam</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Spam Detection</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">⚡ Punishment Settings</div>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>Mute Duration (minutes)</label>
+                                <input type="number" value="5" placeholder="Minutes">
+                            </div>
+                            <div class="form-group">
+                                <label>Ban After X Warnings</label>
+                                <input type="number" value="3" placeholder="Number">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Mod Log Channel</label>
+                            <select>
+                                <option>Select Channel</option>
+                                <option>#mod-logs</option>
+                                <option>#admin-logs</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary">💾 Save Settings</button>
+                    </div>
+                </section>
+
+                <!-- Auto Roles Section -->
+                <section id="autorole" class="section">
+                    <div class="content-header">
+                        <h2>👥 Auto Roles</h2>
+                        <p>Automatically assign roles to new members</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">➕ Create Auto Role</div>
+                        <div class="form-group">
+                            <label>Select Role</label>
+                            <select>
+                                <option>Choose a role...</option>
+                                <option>Member</option>
+                                <option>Verified</option>
+                                <option>User</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-success">➕ Add Auto Role</button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">📋 Active Auto Roles</div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Role Name</th>
+                                    <th>Members</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Member</td>
+                                    <td>127</td>
+                                    <td><button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">Remove</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Welcome Section -->
+                <section id="welcome" class="section">
+                    <div class="content-header">
+                        <h2>👋 Welcome Messages</h2>
+                        <p>Customize welcome messages for new members</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="welcome-enabled" checked>
+                            <label for="welcome-enabled" style="margin: 0;">Enable Welcome Messages</label>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Welcome Channel</label>
+                            <select>
+                                <option>Select Channel</option>
+                                <option>#welcome</option>
+                                <option>#general</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Welcome Message</label>
+                            <textarea>Welcome {user} to {server}! You are member #{count}</textarea>
+                        </div>
+
+                        <div class="info-box">
+                            💡 Variables: {user} = mention, {server} = server name, {count} = member count
+                        </div>
+
+                        <button class="btn btn-primary">💾 Save Welcome</button>
+                    </div>
+                </section>
+
+                <!-- Logging Section -->
+                <section id="logging" class="section">
+                    <div class="content-header">
+                        <h2>📝 Logging</h2>
+                        <p>Configure event logging</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">📊 Log Events</div>
+                        <ul class="feature-list">
+                            <li>
+                                <span>Message Deletes</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Member Joins</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Member Leaves</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Role Changes</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Moderation Actions</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">📍 Log Channel</div>
+                        <div class="form-group">
+                            <label>Select Logging Channel</label>
+                            <select>
+                                <option>Select Channel</option>
+                                <option>#logs</option>
+                                <option>#mod-logs</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary">💾 Set Log Channel</button>
+                    </div>
+                </section>
+
+                <!-- Commands Section -->
+                <section id="commands" class="section">
+                    <div class="content-header">
+                        <h2>⚙️ Custom Commands</h2>
+                        <p>Create and manage custom commands</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">➕ Create New Command</div>
+                        <div class="form-group">
+                            <label>Command Name</label>
+                            <input type="text" placeholder="mycommand">
+                        </div>
+                        <div class="form-group">
+                            <label>Command Response</label>
+                            <textarea placeholder="Your response text here..."></textarea>
+                        </div>
+                        <button class="btn btn-success">➕ Create Command</button>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">📋 Your Commands</div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Command</th>
+                                    <th>Usage</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>!hello</td>
+                                    <td>245</td>
+                                    <td>
+                                        <button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px; margin-right: 5px;">Edit</button>
+                                        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">Delete</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Analytics Section -->
+                <section id="analytics" class="section">
+                    <div class="content-header">
+                        <h2>📈 Analytics</h2>
+                        <p>View your bot's statistics and activity</p>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-label">Commands Today</div>
+                            <div class="stat-value" id="commands-today">1,847</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Active Users</div>
+                            <div class="stat-value" id="active-users">523</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Messages</div>
+                            <div class="stat-value" id="messages-count">12.5K</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">🔝 Top Commands</div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Command</th>
+                                    <th>Usage</th>
+                                    <th>Percentage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>!ping</td>
+                                    <td>542</td>
+                                    <td><span class="badge badge-success">29%</span></td>
+                                </tr>
+                                <tr>
+                                    <td>!help</td>
+                                    <td>387</td>
+                                    <td><span class="badge badge-success">21%</span></td>
+                                </tr>
+                                <tr>
+                                    <td>!play</td>
+                                    <td>312</td>
+                                    <td><span class="badge badge-success">17%</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Prefix Section -->
+                <section id="prefix" class="section">
+                    <div class="content-header">
+                        <h2>📌 Prefix Settings</h2>
+                        <p>Change your bot's command prefix</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="form-group">
+                            <label>Current Prefix</label>
+                            <input type="text" value="!" maxlength="5">
+                        </div>
+                        <button class="btn btn-primary">💾 Update Prefix</button>
+                    </div>
+                </section>
+
+                <!-- Music Section -->
+                <section id="music" class="section">
+                    <div class="content-header">
+                        <h2>🎵 Music Settings</h2>
+                        <p>Configure music player options</p>
+                    </div>
+
+                    <div class="card">
+                        <ul class="feature-list">
+                            <li>
+                                <span>Enable Music Player</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Auto-Play Recommendations</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>24/7 Mode</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Allow Explicit Content</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Settings Section -->
+                <section id="settings" class="section">
+                    <div class="content-header">
+                        <h2>🔧 Advanced Settings</h2>
+                        <p>General bot configuration</p>
+                    </div>
+
+                    <div class="card">
+                        <ul class="feature-list">
+                            <li>
+                                <span>Mention as Prefix</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Delete Command Invocation</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>Show Typing Indicator</span>
+                                <button class="toggle active" onclick="toggleFeature(this)"></button>
+                            </li>
+                            <li>
+                                <span>DM on Warning</span>
+                                <button class="toggle" onclick="toggleFeature(this)"></button>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Members Section -->
+                <section id="members" class="section">
+                    <div class="content-header">
+                        <h2>👤 Member Management</h2>
+                        <p>View and manage server members</p>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">🔍 Search Members</div>
+                        <div class="form-group">
+                            <input type="text" placeholder="Search by name...">
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Join Date</th>
+                                    <th>Roles</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Username#1234</td>
+                                    <td>Jan 15, 2026</td>
+                                    <td><span class="badge badge-success">Member</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let loaded = false;
+
+        function switchSection(sectionId) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+            
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+        }
+
+        function switchServer() {
+            const select = document.getElementById('server-select');
+            if (select.value) {
+                alert('Server switching: ' + select.value);
+            }
+        }
+
+        function toggleFeature(toggle) {
+            toggle.classList.toggle('active');
+        }
+
+        function loadUserInfo() {
+            fetch('/api/user-info')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.username) {
+                        document.getElementById('user-info').textContent = `👤 ${data.username}`;
+                    }
+                })
+                .catch(e => console.error('Error:', e));
+        }
+
+        function loadBotStats() {
+            fetch('/api/bot-stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('bot-name').textContent = data.name || 'Your Bot';
+                    document.getElementById('bot-id').textContent = data.id || '...';
+                    document.getElementById('total-servers').textContent = data.servers || '0';
+                    document.getElementById('total-members').textContent = data.members || '0';
+                    document.getElementById('uptime').textContent = data.uptime || '...';
+                })
+                .catch(e => console.error('Error:', e));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!loaded) {
+                loadUserInfo();
+                loadBotStats();
+                loaded = true;
+            }
+        });
+    </script>
+</body>
+</html>
+    <div class="container">
+        <nav class="navbar">
+            <div class="nav-content">
+                <h1>🤖 Discord Bot Dashboard</h1>
+                <div class="nav-items">
+                    <span id="user-info" style="color: var(--text); margin-right: 20px;">Loading...</span>
+                    <a href="/logout" class="logout-btn">🚪 Logout</a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="dashboard-container">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <h3>📋 Menu</h3>
+                <button class="menu-item active" onclick="switchTab('overview')">📊 Overview</button>
+                <button class="menu-item" onclick="switchTab('servers')">🏠 Servers</button>
+                <button class="menu-item" onclick="switchTab('commands')">⚙️ Commands</button>
+                <button class="menu-item" onclick="switchTab('settings')">🔧 Settings</button>
+                <button class="menu-item" onclick="switchTab('analytics')">📈 Analytics</button>
+            </div>
+
+            <!-- Main Content -->
+            <div class="content-area">
+                <!-- Overview Tab -->
+                <div id="overview" class="section">
+                    <h3>📊 Bot Overview</h3>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h4>🤖 Bot Status</h4>
+                            <div class="value">🟢 Online</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>📚 Servers</h4>
+                            <div class="value" id="server-count">--</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>👥 Total Members</h4>
+                            <div class="value" id="member-count">--</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>⏱️ Uptime</h4>
+                            <div class="value" id="uptime">--</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 30px;">
+                        <h4>📝 Bot Information</h4>
+                        <p><strong>Bot Name:</strong> <span id="bot-name">Loading...</span></p>
+                        <p><strong>Bot ID:</strong> <span id="bot-id">Loading...</span></p>
+                        <p><strong>Prefix:</strong> <span id="prefix">!</span></p>
+                        <p><strong>Version:</strong> <span id="version">1.0.0</span></p>
+                    </div>
+                </div>
+
+                <!-- Servers Tab -->
+                <div id="servers" class="section" style="display: none;">
+                    <h3>🏠 Managed Servers</h3>
+                    <p>Your bot is present in the following servers:</p>
+                    <div id="servers-list" style="margin-top: 15px;">
+                        <p style="color: var(--text-dark);">Loading servers...</p>
+                    </div>
+                </div>
+
+                <!-- Commands Tab -->
+                <div id="commands" class="section" style="display: none;">
+                    <h3>⚙️ Bot Commands</h3>
+                    <p>Available commands for your bot:</p>
+                    <div id="commands-list" style="margin-top: 15px;">
+                        <p style="color: var(--text-dark);">Loading commands...</p>
+                    </div>
+                </div>
+
+                <!-- Settings Tab -->
+                <div id="settings" class="section" style="display: none;">
+                    <h3>🔧 Bot Settings</h3>
+                    <div style="margin-top: 15px;">
+                        <label>
+                            <input type="checkbox" id="autorole" checked> Enable Auto-role
+                        </label>
+                        <br><br>
+                        <label>
+                            <input type="checkbox" id="moderation" checked> Enable Moderation
+                        </label>
+                        <br><br>
+                        <label>
+                            <input type="checkbox" id="welcome" checked> Enable Welcome Messages
+                        </label>
+                        <br><br>
+                        <button onclick="saveSettings()" style="margin-top: 15px; padding: 10px 20px; background: var(--primary); color: white; border: none; border-radius: 5px; cursor: pointer;">
+                            💾 Save Settings
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Analytics Tab -->
+                <div id="analytics" class="section" style="display: none;">
+                    <h3>📈 Analytics</h3>
+                    <div style="margin-top: 15px;">
+                        <p><strong>Commands Used Today:</strong> <span id="commands-today">0</span></p>
+                        <p><strong>Active Users:</strong> <span id="active-users">0</span></p>
+                        <p><strong>Messages Processed:</strong> <span id="messages">0</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let loaded = false;
+
+        // Switch between tabs
+        function switchTab(tabName) {
+            const sections = document.querySelectorAll('.section');
+            sections.forEach(s => s.style.display = 'none');
+            
+            const targetSection = document.getElementById(tabName);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+
+            const items = document.querySelectorAll('.menu-item');
+            items.forEach(i => i.classList.remove('active'));
+            
+            // Find the clicked button and mark it active
+            event.target.classList.add('active');
+        }
+
+        // Load user info (only once)
+        function loadUserInfo() {
+            fetch('/api/user-info')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.username) {
+                        document.getElementById('user-info').textContent = `👤 ${data.username}`;
+                    }
+                })
+                .catch(e => console.error('Could not load user info:', e));
+        }
+
+        // Load bot stats (only once)
+        function loadBotStats() {
+            fetch('/api/bot-stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('bot-name').textContent = data.name || 'Your Bot';
+                    document.getElementById('bot-id').textContent = data.id || '...';
+                    document.getElementById('server-count').textContent = data.servers || '0';
+                    document.getElementById('member-count').textContent = data.members || '0';
+                    document.getElementById('uptime').textContent = data.uptime || '...';
+                })
+                .catch(e => console.error('Could not load bot stats:', e));
+        }
+
+        // Load on page load (once only)
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!loaded) {
+                console.log('Loading dashboard data...');
+                loadUserInfo();
+                loadBotStats();
+                loaded = true;
+            }
+        });
+
+        // Save settings
+        function saveSettings() {
+            alert('✅ Settings saved!');
+        }
+    </script>
+</body>
+</html>
+                            <div class="stat-card">
+                                <h3>🔧 Custom Commands</h3>
+                                <p id="custom-count">--</p>
+                            </div>
+                        </div>
+
+                        <div class="chart-container">
+                            <h3>Top Commands (Last 7 days)</h3>
+                            <div id="top-commands"></div>
+                        </div>
+                    </div>
+
+                    <!-- Settings Tab -->
+                    <div id="settings" class="tab-content">
+                        <h3>Guild Settings</h3>
+                        <div class="settings-form">
+                            <div class="form-group">
+                                <label>Prefix</label>
+                                <input type="text" id="prefix" maxlength="5" placeholder="!">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Welcome Channel ID</label>
+                                <input type="text" id="welcome-channel" placeholder="Channel ID">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Logs Channel ID</label>
+                                <input type="text" id="logs-channel" placeholder="Channel ID">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Suggestions Channel ID</label>
+                                <input type="text" id="suggestions-channel" placeholder="Channel ID">
+                            </div>
+
+                            <button onclick="saveSettings()" style="margin-top: 15px; padding: 10px 20px; background: var(--primary); color: white; border: none; border-radius: 5px; cursor: pointer;">
+                                💾 Save Settings
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let loaded = false;
+
+        // Switch between tabs
+        function switchTab(tabName) {
+            const sections = document.querySelectorAll('.section');
+            sections.forEach(s => s.style.display = 'none');
+            
+            const targetSection = document.getElementById(tabName);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+
+            const items = document.querySelectorAll('.menu-item');
+            items.forEach(i => i.classList.remove('active'));
+            
+            // Mark clicked button as active
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+        }
+
+        // Load user info (only once)
+        function loadUserInfo() {
+            fetch('/api/user-info')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.username) {
+                        document.getElementById('user-info').textContent = `👤 ${data.username}`;
+                    }
+                })
+                .catch(e => console.error('Could not load user info:', e));
+        }
+
+        // Load bot stats (only once)
+        function loadBotStats() {
+            fetch('/api/bot-stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('bot-name').textContent = data.name || 'Your Bot';
+                    document.getElementById('bot-id').textContent = data.id || '...';
+                    document.getElementById('server-count').textContent = data.servers || '0';
+                    document.getElementById('member-count').textContent = data.members || '0';
+                    document.getElementById('uptime').textContent = data.uptime || '...';
+                })
+                .catch(e => console.error('Could not load bot stats:', e));
+        }
+
+        // Load on page load (once only)
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!loaded) {
+                loadUserInfo();
+                loadBotStats();
+                loaded = true;
+            }
+        });
+
+        // Save settings
+        function saveSettings() {
+            alert('✅ Settings saved!');
+        }
+    </script>
+</body>
+</html>

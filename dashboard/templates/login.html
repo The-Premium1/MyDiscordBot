@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Bot Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .discord-btn {
+            background: #7289da !important;
+            color: white !important;
+            padding: 12px 24px !important;
+            border: none !important;
+            border-radius: 5px !important;
+            font-size: 16px !important;
+            cursor: pointer !important;
+            text-decoration: none !important;
+            display: inline-block !important;
+            transition: background 0.3s !important;
+        }
+        .discord-btn:hover {
+            background: #5a6db8 !important;
+        }
+    </style>
+</head>
+<body class="login-page">
+    <div class="login-container">
+        <div class="login-box">
+            <h1>🤖 Bot Dashboard</h1>
+            <p>Manage your Discord bot</p>
+
+            <a href="/auth/discord" class="discord-btn">🔐 Login with Discord</a>
+
+            <p id="error-message" class="error"></p>
+        </div>
+    </div>
+</body>
+</html>
