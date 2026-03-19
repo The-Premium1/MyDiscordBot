@@ -10,7 +10,15 @@ import yt_dlp
 
 logging.basicConfig(level=logging.INFO)
 
-FFMPEG_EXE = os.path.join(os.path.dirname(__file__), '..', 'ffmpeg.exe')
+# FFmpeg path - use system ffmpeg on Linux (Railway), fallback to local exe on Windows
+FFMPEG_EXE = None
+if os.path.exists('/usr/bin/ffmpeg'):  # Linux/Railway
+    FFMPEG_EXE = '/usr/bin/ffmpeg'
+else:
+    # Try local path for Windows dev
+    local_path = os.path.join(os.path.dirname(__file__), '..', 'ffmpeg.exe')
+    if os.path.exists(local_path):
+        FFMPEG_EXE = local_path
 
 
 class MusicManager:
@@ -28,12 +36,17 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.manager = MusicManager()
-        self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True}
+        self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True, 'no-warnings': True}
+        
+        # Build FFMPEG options - make executable optional if not found
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn -b:a 128k',
-            'executable': FFMPEG_EXE
+            'options': '-vn -b:a 128k'
         }
+        if FFMPEG_EXE:
+            self.FFMPEG_OPTIONS['executable'] = FFMPEG_EXE
+        
+        print(f"🎵 FFmpeg path: {FFMPEG_EXE if FFMPEG_EXE else 'Using system ffmpeg'}")
 
     async def check_voice_channels(self, ctx: commands.Context) -> bool:
         if not ctx.voice_client:
@@ -261,8 +274,8 @@ class Music(commands.Cog):
             await ctx.author.voice.channel.connect()
 
         async with ctx.typing():
-            with yt_dlp.YoutubeDL(self.YDL_OPTIONS) as ydl:
-                try:
+            try:
+                with yt_dlp.YoutubeDL(self.YDL_OPTIONS) as ydl:
                     search_query = f"ytsearch:{search}" if not search.startswith("http") else search
                     info = ydl.extract_info(search_query, download=False)
                     if 'entries' in info:
@@ -273,8 +286,17 @@ class Music(commands.Cog):
 
                     if not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
                         self.play_next(ctx)
-                except Exception as e:
-                    await ctx.send(f"❌ Error: {e}")
+            except yt_dlp.utils.DownloadError as e:
+                if "Sign in to confirm you're not a bot" in str(e):
+                    await ctx.send("❌ YouTube is blocking this request. Try a different song or source.")
+                else:
+                    await ctx.send(f"❌ YouTube error: {str(e)[:100]}")
+            except Exception as e:
+                error_str = str(e)
+                if "ffmpeg" in error_str.lower():
+                    await ctx.send("❌ Audio system error. Try again later.")
+                else:
+                    await ctx.send(f"❌ Error: {error_str[:100]}")
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx: commands.Context):
@@ -338,8 +360,18 @@ class Music(commands.Cog):
 
     @commands.command()
     async def join(self, ctx: commands.Context):
+        """Join the voice channel."""
         if not ctx.author.voice:
             return await ctx.send("❌ Join a VC first!")
+        
+        # Check if bot is already in a voice channel
+        if ctx.voice_client:
+            # If in the same channel, do nothing
+            if ctx.voice_client.channel == ctx.author.voice.channel:
+                return await ctx.send("✅ Already in your channel!")
+            # If in a different channel, disconnect first
+            await ctx.voice_client.disconnect()
+        
         await ctx.author.voice.channel.connect()
         await self.update_vc_status("☕ Chilling...")
         await ctx.send("✅ Joined!")
