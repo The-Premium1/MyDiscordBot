@@ -384,10 +384,6 @@ class Music(commands.Cog):
                     await ctx.send("❌ Song not found. Try a different search term.")
                 else:
                     await ctx.send(f"❌ Error: {str(e)[:100]}")
-                elif "not found" in error_str:
-                    await ctx.send("❌ Song not found. Try a different search term.")
-                else:
-                    await ctx.send(f"❌ Error: {str(e)[:100]}")
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx: commands.Context):
