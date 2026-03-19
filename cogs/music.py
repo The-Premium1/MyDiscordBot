@@ -364,12 +364,18 @@ class Music(commands.Cog):
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, search: str):
         """Plays a song from YouTube."""
+        print(f"ðŸŽµ PLAY command called: search='{search}'")
+        
         if not ctx.author.voice:
+            print(f"âŒ User not in voice channel")
             return await ctx.send("Join a voice channel first!")
+        
+        print(f"ðŸŽµ User in voice channel: {ctx.author.voice.channel.name}")
         
         # Get or create voice client for this guild
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if not voice_client:
+            print(f"ðŸŽµ No existing voice client, attempting to join...")
             # If bot is already in a different channel, disconnect first
             existing_vc = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
             if existing_vc and existing_vc.channel != ctx.author.voice.channel:
@@ -381,75 +387,76 @@ class Music(commands.Cog):
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    print(f"ðŸŽ¤ Attempting to join VC (attempt {attempt + 1}/{max_retries})...")
-                    # reconnect=False prevents auto-reconnect loops
+                    print(f"ðŸŽ¤ Join attempt {attempt + 1}/{max_retries}...")
                     voice_client = await ctx.author.voice.channel.connect(timeout=15.0, reconnect=False)
-                    print(f"ðŸŽ¤ Connected to voice, waiting for stabilization...")
-                    await asyncio.sleep(2.5)  # Increased to 2.5s for stability
+                    print(f"ðŸŽ¤ Connected to voice")
+                    await asyncio.sleep(2.5)
                     
-                    # Retry the is_connected check
                     for check_attempt in range(3):
                         if voice_client.is_connected():
-                            print(f"âœ… Voice connection stable at check {check_attempt + 1}")
+                            print(f"âœ… Voice connection stable")
                             break
                         await asyncio.sleep(0.5)
                     else:
-                        # All checks failed
                         raise Exception("Voice connection not stable after retries")
-                    break  # Success, exit retry loop
+                    break
                 except Exception as e:
-                    print(f"âŒ Attempt {attempt + 1} failed: {str(e)}")
+                    print(f"âŒ Join attempt {attempt + 1} failed: {str(e)}")
                     error_str = str(e).lower()
                     
-                    # Always check if actually connected before failing
-                    # 4006 errors often don't prevent joining in practice
                     await asyncio.sleep(1.5)
                     voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
                     if voice_client and voice_client.is_connected():
                         print(f"âœ… Voice connection established (ignoring error)")
-                        break  # Connection is fine, continue silently
+                        break
                     
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1.0)
                     else:
-                        # Last resort: bot may still be in voice from Discord's perspective
-                        print(f"âŒ Could not establish stable voice connection after {max_retries} attempts")
-                        print(f"Note: FFmpeg status: {FFMPEG_EXE or 'NOT FOUND'}")
-                        # Don't show error to user, just fail silently and let them try again
+                        print(f"âŒ Could not join voice after {max_retries} attempts")
                         return
+
+        print(f"âœ… Voice client ready: is_connected={voice_client.is_connected()}")
 
         async with ctx.typing():
             try:
+                print(f"ðŸŽµ Searching YouTube for: {search}")
                 with yt_dlp.YoutubeDL(self.YDL_OPTIONS) as ydl:
                     search_query = f"ytsearch:{search}" if not search.startswith("http") else search
                     info = ydl.extract_info(search_query, download=False)
                     if 'entries' in info:
                         info = info['entries'][0]
 
+                    print(f"âœ… Found song: {info['title']}")
                     self.manager.queue.append(info)
+                    print(f"ðŸŽµ Added to queue. Queue length: {len(self.manager.queue)}")
                     await ctx.send(f"Added to queue: **{info['title']}**")
 
                     # Always try to play if queue has songs and no music is playing
                     voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
                     if voice_client and voice_client.is_connected():
+                        print(f"âœ… Voice client connected, checking if playing...")
                         # If nothing is currently playing, start immediately
                         if not voice_client.is_playing():
-                            print(f"ðŸŽµ Starting playback (queue has {len(self.manager.queue)} songs)")
+                            print(f"ðŸŽµ Starting playback (queue: {len(self.manager.queue)} songs)")
                             self.play_next(ctx.guild.id)
                         else:
-                            print(f"ðŸŽµ Music already playing, queued for later")
+                            print(f"ðŸŽµ Music already playing, song queued for later")
                             await ctx.send("Added to queue, will play next!")
                     else:
                         print(f"âŒ Voice client not connected after adding to queue")
                         
             except yt_dlp.utils.DownloadError as e:
+                print(f"âŒ YouTube error: {str(e)}")
                 if "Sign in to confirm you're not a bot" in str(e):
                     await ctx.send("YouTube is blocking this request. Try a different song or source.")
                 else:
                     await ctx.send(f"YouTube error: {str(e)[:100]}")
             except Exception as e:
                 error_str = str(e).lower()
-                print(f"Play error: {str(e)}")
+                print(f"âŒ Play error: {type(e).__name__}: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 if "ffmpeg" in error_str or ".exe" in error_str:
                     await ctx.send("Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
                 elif "not found" in error_str:
