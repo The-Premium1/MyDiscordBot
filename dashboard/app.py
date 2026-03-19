@@ -107,7 +107,6 @@ def init_db():
             user_id INTEGER,
             guild_id INTEGER,
             role TEXT,
-            joined_at TEXT,
             PRIMARY KEY (user_id, guild_id)
         )
     ''')
@@ -115,17 +114,48 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize database
 init_db()
 
+# Authentication decorator
+def require_auth(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        
+        if not api_token:
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM dashboard_users WHERE api_token = ?", (api_token,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        return f(user['user_id'], *args, **kwargs)
+    
+    return decorated_function
+
+# Routes
+
+@app.before_request
+def before_request():
+    """Make session permanent for all requests"""
+    session.permanent = True
+    app.permanent_session_lifetime = timedelta(days=7)
+
 @app.route('/')
-def index():
+def home():
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    print(f"📱 Login page accessed - Session user_id: {session.get('user_id')}")
+    
     # If already logged in, go to dashboard
     if 'user_id' in session:
         print(f"✅ User already logged in, redirecting to dashboard")
@@ -228,10 +258,29 @@ def callback():
             VALUES (?, ?, ?, ?, ?)
         """, (user_id, username, email, access_token, datetime.now().isoformat()))
         
+        # Get user's guilds from Discord API
+        guilds_url = 'https://discord.com/api/users/@me/guilds'
+        guilds_resp = requests.get(guilds_url, headers=headers)
+        user_guilds = guilds_resp.json() if guilds_resp.ok else []
+        
+        # Add guilds where user is admin/owner
+        for guild in user_guilds:
+            guild_id = guild.get('id')
+            # Check if user is owner (bit 3 = ADMINISTRATOR permission)
+            permissions = int(guild.get('permissions', 0))
+            is_admin = (permissions & 8) == 8  # ADMINISTRATOR permission
+            is_owner = guild.get('owner', False)
+            
+            if is_admin or is_owner:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO user_guilds (user_id, guild_id, role, joined_at)
+                    VALUES (?, ?, ?, ?)
+                """, (user_id, guild_id, 'owner' if is_owner else 'admin', datetime.now().isoformat()))
+        
         conn.commit()
         conn.close()
         
-        # SET SESSION
+        # SET SESSION - ORDER MATTERS!
         print(f"📝 Setting session...")
         session.permanent = True
         session['user_id'] = user_id
@@ -264,7 +313,7 @@ def dashboard():
         return redirect(url_for('login'))
     
     print(f"✅ User {session.get('username')} accessing dashboard")
-    return render_template('dashboard.html')
+    return render_template('dashboard-new.html')
 
 # API Endpoints
 
@@ -296,6 +345,7 @@ def api_bot_stats():
     stats = bot_connector.get_bot_stats()
     return jsonify(stats)
 
+
 @app.route('/api/servers')
 def api_servers():
     """Get list of servers USER manages that bot is in"""
@@ -321,6 +371,7 @@ def api_servers():
     
     return jsonify(user_servers)
 
+
 @app.route('/api/commands')
 def api_commands():
     """Get list of available commands"""
@@ -330,6 +381,7 @@ def api_commands():
     # Get REAL commands from bot
     commands = bot_connector.get_commands_list()
     return jsonify(commands)
+
 
 @app.route('/api/features')
 def api_features():
@@ -351,6 +403,7 @@ def api_features():
     
     return jsonify(features)
 
+
 @app.route('/api/members')
 def api_members():
     """Get server members"""
@@ -370,6 +423,7 @@ def api_members():
             members.extend(guild_members)
     
     return jsonify(members)
+
 
 @app.route('/api/server/<int:guild_id>/config')
 def api_server_config(guild_id):
@@ -417,6 +471,7 @@ def api_server_config(guild_id):
         'features': features,
         'members_count': guild_info.get('members', 0)
     })
+
 
 @app.route('/api/server/<int:guild_id>/stats')
 def api_server_stats(guild_id):
@@ -473,6 +528,7 @@ def api_server_stats(guild_id):
         'successful_commands': successful_count or 0,
         'period_days': days
     })
+
 
 @app.route('/api/server/<int:guild_id>/settings', methods=['GET', 'POST'])
 def api_server_settings(guild_id):
@@ -594,7 +650,7 @@ def custom_commands(user_id, guild_id):
         cursor.execute('''
             INSERT INTO custom_commands (guild_id, command_name, response, created_by, created_at)
             VALUES (?, ?, ?, ?, ?)
-        ''', (guild_id, data['command_name'], data['response'], user_id, datetime.now().isoformat()))
+        ''', (guild_id, data['command_name'], data['response'], user_id, datetime.utcnow().isoformat()))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -632,7 +688,7 @@ def log_analytics():
     cursor.execute('''
         INSERT INTO analytics (guild_id, command, user_id, timestamp, success)
         VALUES (?, ?, ?, ?, ?)
-    ''', (data['guild_id'], data['command'], data['user_id'], datetime.now().isoformat(), data.get('success', True)))
+    ''', (data['guild_id'], data['command'], data['user_id'], datetime.utcnow().isoformat(), data.get('success', True)))
     conn.commit()
     conn.close()
     
