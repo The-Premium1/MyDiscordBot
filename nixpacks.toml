@@ -1,5 +1,0 @@
-[build]
-pkgs = ["ffmpeg", "libopus", "libsodium", "python311", "gcc"]
-
-[build.run]
-cmd = "pip install -r requirements.txt"
