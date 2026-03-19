@@ -45,6 +45,15 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def require_auth(f):
+    """Decorator to require authentication"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Not authenticated'}), 401
+        return f(session['user_id'], *args, **kwargs)
+    return decorated_function
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -98,6 +107,7 @@ def init_db():
             user_id INTEGER,
             guild_id INTEGER,
             role TEXT,
+            joined_at TEXT,
             PRIMARY KEY (user_id, guild_id)
         )
     ''')
@@ -105,48 +115,17 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Initialize database
 init_db()
 
-# Authentication decorator
-def require_auth(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        api_token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        
-        if not api_token:
-            return jsonify({'error': 'Unauthorized'}), 401
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM dashboard_users WHERE api_token = ?", (api_token,))
-        user = cursor.fetchone()
-        conn.close()
-        
-        if not user:
-            return jsonify({'error': 'Invalid token'}), 401
-        
-        return f(user['user_id'], *args, **kwargs)
-    
-    return decorated_function
-
-# Routes
-
-@app.before_request
-def before_request():
-    """Make session permanent for all requests"""
-    session.permanent = True
-    app.permanent_session_lifetime = timedelta(days=7)
-
 @app.route('/')
-def home():
+def index():
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    print(f"📱 Login page accessed - Session user_id: {session.get('user_id')}")
-    
     # If already logged in, go to dashboard
     if 'user_id' in session:
         print(f"✅ User already logged in, redirecting to dashboard")
@@ -252,7 +231,7 @@ def callback():
         conn.commit()
         conn.close()
         
-        # SET SESSION - ORDER MATTERS!
+        # SET SESSION
         print(f"📝 Setting session...")
         session.permanent = True
         session['user_id'] = user_id
@@ -317,17 +296,30 @@ def api_bot_stats():
     stats = bot_connector.get_bot_stats()
     return jsonify(stats)
 
-
 @app.route('/api/servers')
 def api_servers():
-    """Get list of servers bot is in"""
+    """Get list of servers USER manages that bot is in"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
-    # Get REAL servers from bot
-    servers = bot_connector.get_servers()
-    return jsonify(servers)
-
+    user_id = session['user_id']
+    
+    # Get ALL servers bot is in
+    all_servers = bot_connector.get_servers()
+    
+    # Get user's guilds (from database - guilds they manage)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT guild_id FROM user_guilds WHERE user_id = ?
+    """, (user_id,))
+    user_guild_ids = [str(row[0]) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Filter: only return servers bot is in AND user manages
+    user_servers = [s for s in all_servers if str(s.get('id')) in user_guild_ids]
+    
+    return jsonify(user_servers)
 
 @app.route('/api/commands')
 def api_commands():
@@ -338,7 +330,6 @@ def api_commands():
     # Get REAL commands from bot
     commands = bot_connector.get_commands_list()
     return jsonify(commands)
-
 
 @app.route('/api/features')
 def api_features():
@@ -360,7 +351,6 @@ def api_features():
     
     return jsonify(features)
 
-
 @app.route('/api/members')
 def api_members():
     """Get server members"""
@@ -381,51 +371,147 @@ def api_members():
     
     return jsonify(members)
 
-
-@require_auth
-def get_guilds(user_id):
-    """Get all guilds for user."""
+@app.route('/api/server/<int:guild_id>/config')
+def api_server_config(guild_id):
+    """Get real configuration for a specific server"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user_id = session['user_id']
+    
+    # Check if user has access to this guild
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        SELECT g.guild_id, g.guild_name, g.prefix, g.settings
-        FROM guilds g
-        JOIN user_guilds ug ON g.guild_id = ug.guild_id
-        WHERE ug.user_id = ?
-    ''', (user_id,))
+    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
+    access = cursor.fetchone()
     
-    guilds = [dict(row) for row in cursor.fetchall()]
+    if not access:
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Get guild info from bot
+    guild_info = bot_connector.get_guild_info(guild_id)
+    
+    # Get saved settings from database
+    cursor.execute("SELECT settings, prefix FROM guilds WHERE guild_id = ?", (guild_id,))
+    guild_row = cursor.fetchone()
+    saved_settings = json.loads(guild_row['settings']) if guild_row and guild_row['settings'] else {}
+    prefix = guild_row['prefix'] if guild_row else '!'
+    
+    # Get loaded cogs/features
+    cogs = bot_connector.get_cogs_info()
+    features = []
+    for cog_name, cog_info in cogs.items():
+        features.append({
+            'name': cog_info['name'],
+            'enabled': cog_info['loaded'],
+            'commands': cog_info['commands']
+        })
+    
     conn.close()
     
-    return jsonify(guilds)
+    return jsonify({
+        'guild_info': guild_info,
+        'settings': saved_settings,
+        'prefix': prefix,
+        'features': features,
+        'members_count': guild_info.get('members', 0)
+    })
 
-@app.route('/api/guilds/<int:guild_id>/settings', methods=['GET', 'POST'])
-@require_auth
-def guild_settings(user_id, guild_id):
-    """Get or update guild settings."""
+@app.route('/api/server/<int:guild_id>/stats')
+def api_server_stats(guild_id):
+    """Get real analytics for a specific server"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user_id = session['user_id']
+    
+    # Check access
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+    
+    days = request.args.get('days', 7, type=int)
+    since = datetime.now() - timedelta(days=days)
+    
+    # Top commands in this server
+    cursor.execute("""
+        SELECT command, COUNT(*) as count, SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successful
+        FROM analytics
+        WHERE guild_id = ? AND timestamp > ? 
+        GROUP BY command
+        ORDER BY count DESC
+        LIMIT 10
+    """, (guild_id, since.isoformat()))
+    
+    top_commands = [{'command': row[0], 'total': row[1], 'successful': row[2]} for row in cursor.fetchall()]
+    
+    # Active members
+    cursor.execute("""
+        SELECT COUNT(DISTINCT user_id) FROM analytics
+        WHERE guild_id = ? AND timestamp > ? AND success = 1
+    """, (guild_id, since.isoformat()))
+    active_users = cursor.fetchone()[0]
+    
+    # Total commands
+    cursor.execute("""
+        SELECT COUNT(*), SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END)
+        FROM analytics
+        WHERE guild_id = ? AND timestamp > ?
+    """, (guild_id, since.isoformat()))
+    total_count, successful_count = cursor.fetchone()
+    
+    conn.close()
+    
+    return jsonify({
+        'top_commands': top_commands,
+        'active_users': active_users,
+        'total_commands': total_count or 0,
+        'successful_commands': successful_count or 0,
+        'period_days': days
+    })
+
+@app.route('/api/server/<int:guild_id>/settings', methods=['GET', 'POST'])
+def api_server_settings(guild_id):
+    """Get or update server settings"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user_id = session['user_id']
+    
     conn = get_db()
     cursor = conn.cursor()
     
-    # Check if user has access
+    # Check access
     cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
     if not cursor.fetchone():
         conn.close()
         return jsonify({'error': 'Access denied'}), 403
     
     if request.method == 'GET':
-        cursor.execute("SELECT settings FROM guilds WHERE guild_id = ?", (guild_id,))
+        cursor.execute("SELECT settings, prefix FROM guilds WHERE guild_id = ?", (guild_id,))
         row = cursor.fetchone()
         settings = json.loads(row['settings']) if row and row['settings'] else {}
+        prefix = row['prefix'] if row else '!'
         conn.close()
-        return jsonify(settings)
+        return jsonify({'settings': settings, 'prefix': prefix})
     
     if request.method == 'POST':
-        settings = request.get_json()
-        settings_json = json.dumps(settings)
-        cursor.execute("UPDATE guilds SET settings = ? WHERE guild_id = ?", (settings_json, guild_id))
+        data = request.get_json()
+        settings_json = json.dumps(data.get('settings', {}))
+        prefix = data.get('prefix', '!')
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO guilds (guild_id, settings, prefix, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (guild_id, settings_json, prefix, datetime.now().isoformat()))
+        
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'message': 'Settings saved'})
 
 @app.route('/api/guilds/<int:guild_id>/analytics', methods=['GET'])
 @require_auth
@@ -441,7 +527,7 @@ def get_analytics(user_id, guild_id):
         return jsonify({'error': 'Access denied'}), 403
     
     days = request.args.get('days', 7, type=int)
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now() - timedelta(days=days)
     
     # Commands used
     cursor.execute('''
@@ -508,7 +594,7 @@ def custom_commands(user_id, guild_id):
         cursor.execute('''
             INSERT INTO custom_commands (guild_id, command_name, response, created_by, created_at)
             VALUES (?, ?, ?, ?, ?)
-        ''', (guild_id, data['command_name'], data['response'], user_id, datetime.utcnow().isoformat()))
+        ''', (guild_id, data['command_name'], data['response'], user_id, datetime.now().isoformat()))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -546,7 +632,7 @@ def log_analytics():
     cursor.execute('''
         INSERT INTO analytics (guild_id, command, user_id, timestamp, success)
         VALUES (?, ?, ?, ?, ?)
-    ''', (data['guild_id'], data['command'], data['user_id'], datetime.utcnow().isoformat(), data.get('success', True)))
+    ''', (data['guild_id'], data['command'], data['user_id'], datetime.now().isoformat(), data.get('success', True)))
     conn.commit()
     conn.close()
     
