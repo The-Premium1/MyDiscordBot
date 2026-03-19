@@ -14,11 +14,12 @@ logging.basicConfig(level=logging.INFO)
 # FFmpeg detection - Railway runs on Linux, check system paths first
 FFMPEG_EXE = None
 
-# Try common Linux paths first
-for path in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']:
+# Try common Linux paths first (nixpacks installs to /usr/bin)
+for path in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg', '/nix/store']:
     if os.path.exists(path):
-        FFMPEG_EXE = path
-        break
+        if path.endswith('ffmpeg'):
+            FFMPEG_EXE = path
+            break
 
 # If not found, try which command (Unix-like systems)
 if not FFMPEG_EXE:
@@ -29,14 +30,27 @@ if not FFMPEG_EXE:
     except Exception:
         pass
 
-# Last resort: Windows fallback for local dev
+# Last resort: search in nix store (nixpacks puts it here)
+if not FFMPEG_EXE:
+    try:
+        result = subprocess.run(['find', '/nix', '-name', 'ffmpeg', '-type', 'f', '-executable'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            FFMPEG_EXE = result.stdout.strip().split('\n')[0]
+    except Exception:
+        pass
+
+# Windows fallback for local dev
 if not FFMPEG_EXE:
     local_path = os.path.join(os.path.dirname(__file__), '..', 'ffmpeg.exe')
     if os.path.exists(local_path):
         FFMPEG_EXE = local_path
 
-# Log what we found
-print(f"ðŸŽµ FFmpeg Detection: {FFMPEG_EXE if FFMPEG_EXE else 'NOT FOUND (will use system default)'}")
+# If still not found, assume it's in PATH and will work
+if FFMPEG_EXE:
+    print(f"ðŸŽµ FFmpeg Detection: FOUND at {FFMPEG_EXE}")
+else:
+    print(f"ðŸŽµ FFmpeg Detection: NOT FOUND - will use system PATH")
 
 # DEBUG: Check if ffmpeg exists in common locations
 import shutil
@@ -511,7 +525,7 @@ class Music(commands.Cog):
         
         # Disconnect
         await voice_client.disconnect(force=True)
-        await self.update_vc_status("â˜• Chilling...")
+        await self.update_vc_status("Chilling...")
         await ctx.send("Disconnected.")
 
     @commands.command(aliases=['v', 'vol'])
@@ -564,7 +578,7 @@ class Music(commands.Cog):
                 return
             
             print(f"âœ… Joined {target_channel.name}")
-            await self.update_vc_status("â˜• Chilling...")
+            await self.update_vc_status("Chilling...")
             await ctx.send("Joined!")
             
         except asyncio.TimeoutError:
