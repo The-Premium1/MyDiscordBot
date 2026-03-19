@@ -76,6 +76,15 @@ class Music(commands.Cog):
         
         print(f"🎵 Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
 
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """Track voice state changes for debugging."""
+        if member.id == self.bot.user.id:
+            if after.channel:
+                print(f"✅ BOT VOICE STATE: Connected to {after.channel.name} in {member.guild.name}")
+            else:
+                print(f"📵 BOT VOICE STATE: Disconnected from {before.channel.name if before.channel else 'unknown'}")
+
     async def check_voice_channels(self, ctx: commands.Context) -> bool:
         if not ctx.voice_client:
             await ctx.send("🎧 I'm not in a voice channel!")
@@ -95,6 +104,32 @@ class Music(commands.Cog):
         else:
             await ctx.send("❌ FFmpeg not found!")
 
+    @commands.command()
+    async def checkperms(self, ctx: commands.Context):
+        """Check if bot has voice permissions in this channel."""
+        channel = ctx.author.voice.channel if ctx.author.voice else None
+        
+        if not channel:
+            return await ctx.send("🎧 You're not in a voice channel!")
+        
+        perms = channel.permissions_for(ctx.guild.me)
+        
+        embed = discord.Embed(title="🔐 Bot Voice Permissions", color=discord.Color.blue())
+        embed.add_field(name="Channel", value=channel.mention, inline=False)
+        embed.add_field(name="Connect", value="✅" if perms.connect else "❌", inline=True)
+        embed.add_field(name="Speak", value="✅" if perms.speak else "❌", inline=True)
+        embed.add_field(name="Use Voice", value="✅" if perms.use_voice_activation else "❌", inline=True)
+        embed.add_field(name="Manage Channels", value="✅" if perms.manage_channels else "❌", inline=True)
+        
+        if not perms.connect:
+            embed.description = "❌ **Bot cannot connect to this voice channel!**"
+        elif not perms.speak:
+            embed.description = "⚠️ **Bot can connect but cannot speak!**"
+        else:
+            embed.description = "✅ **All permissions OK**"
+        
+        await ctx.send(embed=embed)
+
     @commands.command(aliases=['j'])
     async def join(self, ctx: commands.Context):
         """Join the voice channel."""
@@ -102,6 +137,13 @@ class Music(commands.Cog):
             return await ctx.send("🎧 You're not in a voice channel!")
         
         channel = ctx.author.voice.channel
+        
+        # Check permissions
+        perms = channel.permissions_for(ctx.guild.me)
+        if not perms.connect:
+            return await ctx.send("❌ I don't have permission to connect to this voice channel!")
+        if not perms.speak:
+            return await ctx.send("❌ I don't have permission to speak in this voice channel!")
         
         # If already in a channel
         if ctx.voice_client:
@@ -119,11 +161,10 @@ class Music(commands.Cog):
         
         # Connect to new channel
         try:
-            print(f"🔗 Attempting to connect to {channel} ({channel.id})...")
+            print(f"🔗 Attempting to connect to {channel} ({channel.id}) in guild {ctx.guild.id}...")
             vc = await asyncio.wait_for(channel.connect(timeout=30.0), timeout=35.0)
             print(f"✅ Connection object created: {vc}")
             print(f"   is_connected(): {vc.is_connected()}")
-            print(f"   is_playing(): {vc.is_playing()}")
             
             await asyncio.sleep(5)  # Longer wait for voice handshake
             
@@ -132,7 +173,6 @@ class Music(commands.Cog):
             if vc and vc.is_connected():
                 await ctx.send(f"✅ Joined {channel.mention}!")
             else:
-                # Still try to send confirmation even if not connected
                 await ctx.send(f"⚠️ Join attempted - status unclear. Try `!vc_status`")
                 print(f"⚠️ WARNING: Connection object exists but is_connected() = False!")
                 
