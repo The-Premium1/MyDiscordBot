@@ -110,26 +110,40 @@ class Music(commands.Cog):
             # Move to new channel
             try:
                 await ctx.voice_client.move_to(channel)
-                await asyncio.sleep(2)  # Wait for connection to stabilize
+                await asyncio.sleep(2)
                 await ctx.send(f"🔀 Moved to {channel.mention}!")
                 return
             except Exception as e:
+                print(f"❌ MOVE ERROR: {e}")
                 return await ctx.send(f"❌ Failed to move: {str(e)}")
         
         # Connect to new channel
         try:
-            vc = await channel.connect(timeout=10.0)
-            await asyncio.sleep(3)  # Give voice connection time to stabilize
+            print(f"🔗 Attempting to connect to {channel} ({channel.id})...")
+            vc = await asyncio.wait_for(channel.connect(timeout=30.0), timeout=35.0)
+            print(f"✅ Connection object created: {vc}")
+            print(f"   is_connected(): {vc.is_connected()}")
+            print(f"   is_playing(): {vc.is_playing()}")
             
-            # Verify connection actually worked
+            await asyncio.sleep(5)  # Longer wait for voice handshake
+            
+            print(f"✅ After 5s wait - is_connected(): {vc.is_connected()}")
+            
             if vc and vc.is_connected():
                 await ctx.send(f"✅ Joined {channel.mention}!")
             else:
-                await ctx.send(f"⚠️ Connection may be unstable - check `!vc_status`")
-        except asyncio.TimeoutError:
-            await ctx.send("❌ Connection timeout - Discord server may be slow")
+                # Still try to send confirmation even if not connected
+                await ctx.send(f"⚠️ Join attempted - status unclear. Try `!vc_status`")
+                print(f"⚠️ WARNING: Connection object exists but is_connected() = False!")
+                
+        except asyncio.TimeoutError as e:
+            print(f"❌ TIMEOUT: {e}")
+            await ctx.send("❌ Connection timeout (Discord may be slow)")
         except Exception as e:
-            await ctx.send(f"❌ Failed to join: {str(e)}")
+            print(f"❌ CONNECT ERROR: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            await ctx.send(f"❌ Failed to join: {type(e).__name__}: {str(e)}")
 
     @commands.command(aliases=['l', 'disconnect', 'dc'])
     async def leave(self, ctx: commands.Context):
@@ -249,15 +263,23 @@ class Music(commands.Cog):
     @commands.command()
     async def vc_status(self, ctx: commands.Context):
         """Show voice connection status."""
-        if ctx.voice_client:
-            embed = discord.Embed(title="🎙️ Voice Status", color=discord.Color.green())
-            embed.add_field(name="Channel", value=ctx.voice_client.channel.mention, inline=False)
-            embed.add_field(name="Connected", value=str(ctx.voice_client.is_connected()), inline=True)
-            embed.add_field(name="Playing", value=str(ctx.voice_client.is_playing()), inline=True)
-            embed.add_field(name="Paused", value=str(ctx.voice_client.is_paused()), inline=True)
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send("❌ Not in a voice channel!")
+        vc = ctx.voice_client
+        
+        if not vc:
+            return await ctx.send("❌ Not in a voice channel!")
+        
+        embed = discord.Embed(title="🎙️ Voice Status", color=discord.Color.blue() if vc.is_connected() else discord.Color.red())
+        embed.add_field(name="Channel", value=vc.channel.mention if vc.channel else "None", inline=False)
+        embed.add_field(name="Connected", value=f"**{vc.is_connected()}**", inline=True)
+        embed.add_field(name="Playing", value=str(vc.is_playing()), inline=True)
+        embed.add_field(name="Paused", value=str(vc.is_paused()), inline=True)
+        embed.add_field(name="Latency", value=f"{vc.latency*1000:.0f}ms", inline=True)
+        embed.add_field(name="Average Latency", value=f"{vc.average_latency*1000:.0f}ms", inline=True)
+        
+        # Debug info
+        embed.add_field(name="State", value=str(vc._state) if hasattr(vc, '_state') else "Unknown", inline=False)
+        
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
