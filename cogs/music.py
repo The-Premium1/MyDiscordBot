@@ -158,7 +158,7 @@ class Music(commands.Cog):
         async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
             if self.ctx.voice_client.is_playing():
                 self.ctx.voice_client.pause()
-                await self.cog.update_vc_status("â˜• Chilling...")
+                await self.cog.update_vc_status("Chilling...")
                 await interaction.response.send_message("â¸ï¸ Music paused.", ephemeral=True)
             elif self.ctx.voice_client.is_paused():
                 self.ctx.voice_client.resume()
@@ -650,7 +650,7 @@ class Music(commands.Cog):
     async def nowplaying(self, ctx: commands.Context):
         """Shows the currently playing song with player controls."""
         if not self.manager.current:
-            return await ctx.send("No song is currently playing! â˜•")
+            return await ctx.send("No song is currently playing!")
         await self.send_now_playing(ctx)
 
     @commands.command()
