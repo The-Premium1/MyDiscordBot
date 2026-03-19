@@ -28,6 +28,23 @@ async def on_ready():
     # Set bot status
     await bot.change_presence(activity=discord.Game(name="!help | Your Ultimate Bot"))
 
+@bot.event
+async def on_command_error(ctx, error):
+    """Global error handler for all commands."""
+    print(f"⚠️ Command Error in '{ctx.command.name}': {error}")
+    import traceback
+    traceback.print_exc()
+    
+    # Send error message to user
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send(f"❌ You don't have permission to use this command.")
+    elif isinstance(error, commands.BotMissingPermissions):
+        await ctx.send(f"❌ I don't have permission to do that.")
+    elif isinstance(error, commands.CommandNotFound):
+        pass  # Ignore command not found
+    else:
+        await ctx.send(f"❌ Error: {str(error)[:100]}")
+
 async def load_cogs():
     """Loads all cogs from the cogs folder."""
     cogs_dir = './cogs'
