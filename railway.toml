@@ -1,8 +1,11 @@
 [build]
 builder = "nixpacks"
 
-[build.nixpacks]
-providers = ["python"]
+[[services]]
+name = "worker"
+
+[[services]]
+name = "web"
 
 [[build.nixpacks.packages]]
 nix = ["ffmpeg", "libopus", "libsodium"]
