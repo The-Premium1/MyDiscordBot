@@ -31,19 +31,24 @@ async def on_ready():
 @bot.event
 async def on_command_error(ctx, error):
     """Global error handler for all commands."""
-    print(f"⚠️ Command Error in '{ctx.command.name}': {error}")
+    # Handle case where ctx.command is None
+    command_name = ctx.command.name if ctx and ctx.command else "unknown"
+    print(f"⚠️ Command Error in '{command_name}': {error}")
     import traceback
     traceback.print_exc()
     
-    # Send error message to user
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send(f"❌ You don't have permission to use this command.")
-    elif isinstance(error, commands.BotMissingPermissions):
-        await ctx.send(f"❌ I don't have permission to do that.")
-    elif isinstance(error, commands.CommandNotFound):
-        pass  # Ignore command not found
-    else:
-        await ctx.send(f"❌ Error: {str(error)[:100]}")
+    # Send error message to user (only if we have context)
+    if ctx:
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send(f"❌ You don't have permission to use this command.")
+        elif isinstance(error, commands.BotMissingPermissions):
+            await ctx.send(f"❌ I don't have permission to do that.")
+        elif isinstance(error, commands.CommandNotFound):
+            pass  # Ignore command not found
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f"❌ Missing argument: {error.param.name}")
+        else:
+            await ctx.send(f"❌ Error: {str(error)[:100]}")
 
 async def load_cogs():
     """Loads all cogs from the cogs folder."""

@@ -42,11 +42,23 @@
 
             <div class="button-container">
                 <a href="/auth/discord" class="discord-btn">🔐 Login with Discord</a>
-                <a href="https://discord.com/oauth2/authorize?client_id=1483478587255296160&scope=bot&permissions=8" class="discord-btn invite-btn" target="_blank">➕ Add Bot to Server</a>
+                <a href="#" id="invite-btn" class="discord-btn invite-btn" target="_blank">➕ Add Bot to Server</a>
             </div>
 
             <p id="error-message" class="error"></p>
         </div>
     </div>
+
+    <script>
+        // Load invite URL from API
+        fetch('/api/invite-url')
+            .then(res => res.json())
+            .then(data => {
+                if (data.invite_url) {
+                    document.getElementById('invite-btn').href = data.invite_url;
+                }
+            })
+            .catch(err => console.error('Failed to load invite URL:', err));
+    </script>
 </body>
 </html>
