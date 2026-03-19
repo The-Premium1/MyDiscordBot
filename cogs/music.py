@@ -457,57 +457,45 @@ class Music(commands.Cog):
 
     @commands.command()
     async def join(self, ctx: commands.Context):
-        """Join the voice channel with retry logic."""
+        """Join the voice channel."""
         if not ctx.author.voice:
             return await ctx.send("❌ Join a VC first!")
         
         target_channel = ctx.author.voice.channel
         
-        # Get current bot voice client for this guild
+        # Check if bot is ALREADY in this exact channel
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
-        
-        # If bot is already in a voice channel
-        if voice_client:
-            # If already in the same channel, do nothing
+        if voice_client and voice_client.is_connected():
             if voice_client.channel == target_channel:
                 return await ctx.send("✅ Already in your channel!")
-            # If in different channel, disconnect first
-            try:
-                await voice_client.disconnect(force=True)
-                await asyncio.sleep(1.5)
-            except Exception as e:
-                print(f"Error disconnecting: {e}")
+            else:
+                # In different channel - just connect to new one (Discord will auto-disconnect old)
+                # Don't manually disconnect to avoid glitches
+                pass
         
-        # Try to join with retry logic
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                print(f"🎤 Joining VC (attempt {attempt + 1}/{max_retries})...")
-                voice_client = await target_channel.connect(timeout=30.0, reconnect=True)
-                
-                # Verify connection is actually established
-                await asyncio.sleep(0.5)
-                if not voice_client.is_connected():
-                    raise Exception("Voice client created but not connected")
-                
-                print(f"✅ Successfully joined {target_channel.name}")
-                await self.update_vc_status("☕ Chilling...")
-                await ctx.send("✅ Joined!")
+        # Try to join - Discord auto-disconnects from old channels
+        try:
+            print(f"🎤 Joining {target_channel.name}...")
+            voice_client = await target_channel.connect(timeout=10.0, reconnect=True)
+            
+            # Wait for connection to stabilize
+            await asyncio.sleep(0.3)
+            
+            if not voice_client.is_connected():
+                await ctx.send("❌ Failed to connect to voice!")
                 return
-                
-            except Exception as e:
-                error_msg = str(e) if str(e) else "Unknown error"
-                print(f"❌ Join attempt {attempt + 1} failed: {error_msg}")
-                
-                if attempt < max_retries - 1:
-                    # Exponential backoff: 1s, 2s, then give up
-                    wait_time = 2 ** attempt
-                    print(f"⏳ Retrying in {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                else:
-                    # Final attempt failed
-                    await ctx.send(f"❌ Can't join after {max_retries} attempts: {error_msg[:100]}")
-                    print(f"❌ Failed to join {target_channel.name} after {max_retries} retries")
+            
+            print(f"✅ Joined {target_channel.name}")
+            await self.update_vc_status("☕ Chilling...")
+            await ctx.send("✅ Joined!")
+            
+        except asyncio.TimeoutError:
+            await ctx.send("❌ Connection timed out. Try again!")
+            print(f"❌ Join timeout for {target_channel.name}")
+        except Exception as e:
+            error_msg = str(e)[:80]
+            await ctx.send(f"❌ Can't join: {error_msg}")
+            print(f"❌ Join error: {error_msg}")
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
