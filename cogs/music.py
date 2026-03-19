@@ -83,11 +83,16 @@ class Music(commands.Cog):
 
     async def update_vc_status(self, text: str):
         """Updates the Bot's Activity AND the Voice Channel Status bubble."""
+        # Remove emojis from status text - Discord voice status has encoding issues with them
+        clean_text = text.replace("ðŸ”Š", "").replace("â˜•", "").replace("ðŸŽµ", "").strip()
+        if not clean_text:
+            clean_text = "Chilling..."
+        
         await self.bot.change_presence(activity=discord.Game(name=text))
         for vc in self.bot.voice_clients:
             try:
                 # Note: The bot MUST have 'Manage Channels' permission for this to work
-                await vc.channel.edit(status=text)
+                await vc.channel.edit(status=clean_text)
             except Exception as e:
                 pass
 
@@ -324,10 +329,10 @@ class Music(commands.Cog):
         """Handle voice state changes - clean up if bot disconnected"""
         if member == self.bot.user:
             if before.channel and not after.channel:
-                # Bot was disconnected
+                # Bot was disconnected (intentional disconnect, not a reconnect loop)
                 self.manager.queue.clear()
                 self.manager.current = None
-                print("ðŸŽµ Bot disconnected from voice channel")
+                print("ðŸŽµ Bot disconnected from voice channel - cleaning up queue")
 
     async def idle_check(self):
         """Disabled: was causing bot to disconnect after 3 mins of silence"""
@@ -344,19 +349,41 @@ class Music(commands.Cog):
         # Get or create voice client for this guild
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if not voice_client:
-            try:
-                print(f"ðŸŽ¤ Attempting to join VC for play command...")
-                voice_client = await ctx.author.voice.channel.connect(timeout=30.0, reconnect=True)
-                print(f"ðŸŽ¤ Connected to voice, waiting for stabilization...")
-                # Railway needs more time for connection to stabilize before audio operations
-                await asyncio.sleep(2.0)  # Increased from 1.0s for remote server stability
-                if not voice_client.is_connected():
-                    raise Exception("Voice client not connected after join")
-                print(f"âœ… Voice connection stable, ready for playback")
-            except Exception as e:
-                error_msg = str(e) if str(e) else "Unable to join voice channel"
-                print(f"Play join error: {error_msg}")
-                return await ctx.send(f"âŒ Can't join: {error_msg[:100]}")
+            # If bot is already in a different channel, disconnect first
+            existing_vc = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+            if existing_vc and existing_vc.channel != ctx.author.voice.channel:
+                print(f"ðŸŽ¤ Bot in different channel, disconnecting first...")
+                await existing_vc.disconnect(force=True)
+                await asyncio.sleep(1.0)
+            
+            # Retry logic for joining voice
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    print(f"ðŸŽ¤ Attempting to join VC (attempt {attempt + 1}/{max_retries})...")
+                    # reconnect=False prevents auto-reconnect loops
+                    voice_client = await ctx.author.voice.channel.connect(timeout=15.0, reconnect=False)
+                    print(f"ðŸŽ¤ Connected to voice, waiting for stabilization...")
+                    await asyncio.sleep(2.5)  # Increased to 2.5s for stability
+                    
+                    # Retry the is_connected check
+                    for check_attempt in range(3):
+                        if voice_client.is_connected():
+                            print(f"âœ… Voice connection stable at check {check_attempt + 1}")
+                            break
+                        await asyncio.sleep(0.5)
+                    else:
+                        # All checks failed
+                        raise Exception("Voice connection not stable after retries")
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    print(f"âŒ Attempt {attempt + 1} failed: {str(e)}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1.0)
+                    else:
+                        error_msg = str(e) if str(e) else "Unable to join voice channel"
+                        print(f"Play join error: {error_msg}")
+                        return await ctx.send(f"âŒ Can't join: {error_msg[:100]}")
 
         async with ctx.typing():
             try:
@@ -481,21 +508,28 @@ class Music(commands.Cog):
             if voice_client.channel == target_channel:
                 return await ctx.send("âœ… Already in your channel!")
             else:
-                # In different channel - just connect to new one (Discord will auto-disconnect old)
-                # Don't manually disconnect to avoid glitches
-                pass
+                # In different channel - disconnect first before joining new one
+                print(f"ðŸŽ¤ Bot in {voice_client.channel.name}, moving to {target_channel.name}...")
+                await voice_client.disconnect(force=True)
+                await asyncio.sleep(1.0)  # Wait for clean disconnect
         
         # Try to join - Discord auto-disconnects from old channels
         try:
             print(f"ðŸŽ¤ Joining {target_channel.name}...")
-            voice_client = await target_channel.connect(timeout=10.0, reconnect=True)
+            # reconnect=False prevents auto-reconnect loops that cause the bot to rejoin after disconnect
+            voice_client = await target_channel.connect(timeout=10.0, reconnect=False)
             
             # Railway needs more time for connection to be fully established
-            # Local dev was fast enough with 0.3s, but remote servers need 2.0s
             print(f"ðŸŽ¤ Voice connected, waiting for stabilization...")
-            await asyncio.sleep(2.0)  # Increased from 0.3s for distributed server stability
+            await asyncio.sleep(2.5)  # Increased to 2.5s for distributed server stability
             
-            if not voice_client.is_connected():
+            # Multi-check to ensure connection is truly stable
+            for check in range(3):
+                if voice_client.is_connected():
+                    print(f"âœ… Connection verified at check {check + 1}")
+                    break
+                await asyncio.sleep(0.3)
+            else:
                 await ctx.send("âŒ Failed to connect to voice!")
                 return
             
