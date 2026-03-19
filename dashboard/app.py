@@ -1,763 +1,496 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-from flask_cors import CORS
-from functools import wraps
-import sqlite3
-import json
 import os
-from datetime import datetime, timedelta
-import secrets
-import requests
-from dotenv import load_dotenv
-import sys
+import time
+import random
+import asyncio
+import logging
+import subprocess
 
-# Add parent directory to path to import bot connector
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from bot_data_connector import bot_connector
+import discord
+from discord.ext import commands
+import yt_dlp
 
-# Load environment variables from parent directory
-env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(dotenv_path=env_path)
+logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__, template_folder='templates', static_folder='static')
+# FFmpeg detection - Railway runs on Linux, check system paths first
+FFMPEG_EXE = None
 
-# CRITICAL: Fixed secret key that persists
-SECRET_KEY = os.getenv('SECRET_KEY') or 'fixed-secret-key-for-sessions-12345'
-app.secret_key = SECRET_KEY
+# Try common Linux paths first
+for path in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']:
+    if os.path.exists(path):
+        FFMPEG_EXE = path
+        break
 
-print(f"🔑 Using SECRET_KEY: {SECRET_KEY[:20]}...")
-
-# Configure sessions properly
-app.config.update(
-    SESSION_COOKIE_SECURE=False,  # Local testing
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
-    SESSION_REFRESH_EACH_REQUEST=False
-)
-
-CORS(app)
-
-# Database setup
-DATABASE = 'dashboard.db'
-
-def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def require_auth(f):
-    """Decorator to require authentication"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({'error': 'Not authenticated'}), 401
-        return f(session['user_id'], *args, **kwargs)
-    return decorated_function
-
-def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS guilds (
-            guild_id INTEGER PRIMARY KEY,
-            guild_name TEXT,
-            owner_id INTEGER,
-            prefix TEXT DEFAULT '!',
-            settings TEXT,
-            created_at TEXT
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS analytics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER,
-            command TEXT,
-            user_id INTEGER,
-            timestamp TEXT,
-            success BOOLEAN
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS custom_commands (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER,
-            command_name TEXT,
-            response TEXT,
-            created_by INTEGER,
-            created_at TEXT
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dashboard_users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            email TEXT,
-            password_hash TEXT,
-            api_token TEXT,
-            created_at TEXT
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_guilds (
-            user_id INTEGER,
-            guild_id INTEGER,
-            role TEXT,
-            joined_at TEXT,
-            PRIMARY KEY (user_id, guild_id)
-        )
-    ''')
-    
-    conn.commit()
-    
-    # Migration: Add joined_at column if it doesn't exist (for existing databases)
+# If not found, try which command (Unix-like systems)
+if not FFMPEG_EXE:
     try:
-        cursor.execute("PRAGMA table_info(user_guilds)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if 'joined_at' not in columns:
-            cursor.execute("ALTER TABLE user_guilds ADD COLUMN joined_at TEXT DEFAULT NULL")
-            conn.commit()
-            print("✅ Migration: Added joined_at column to user_guilds")
-    except Exception as e:
-        print(f"⚠️ Migration skipped: {e}")
-    
-    conn.close()
+        result = subprocess.run(['which', 'ffmpeg'], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            FFMPEG_EXE = result.stdout.strip()
+    except Exception:
+        pass
 
-init_db()
+# Last resort: Windows fallback for local dev
+if not FFMPEG_EXE:
+    local_path = os.path.join(os.path.dirname(__file__), '..', 'ffmpeg.exe')
+    if os.path.exists(local_path):
+        FFMPEG_EXE = local_path
 
-# Authentication decorator
-def require_auth(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        api_token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        
-        if not api_token:
-            return jsonify({'error': 'Unauthorized'}), 401
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM dashboard_users WHERE api_token = ?", (api_token,))
-        user = cursor.fetchone()
-        conn.close()
-        
-        if not user:
-            return jsonify({'error': 'Invalid token'}), 401
-        
-        return f(user['user_id'], *args, **kwargs)
-    
-    return decorated_function
+# Log what we found
+print(f"🎵 FFmpeg Detection: {FFMPEG_EXE if FFMPEG_EXE else 'NOT FOUND (will use system default)'}")
 
-# Routes
+# DEBUG: Check if ffmpeg exists in common locations
+import shutil
+ffmpeg_in_path = shutil.which('ffmpeg')
+print(f"🎵 FFmpeg in PATH: {ffmpeg_in_path}")
 
-@app.before_request
-def before_request():
-    """Make session permanent for all requests"""
-    session.permanent = True
-    app.permanent_session_lifetime = timedelta(days=7)
 
-@app.route('/')
-def home():
-    if 'user_id' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+class MusicManager:
+    def __init__(self):
+        self.queue = []
+        self.current = None
+        self.start_time = 0
+        self.volume = 0.5
+        self.player_message = None
+        self.text_channel = None
+        self.loop_mode = 0  # 0 = Off, 1 = Single Song, 2 = Whole Queue
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    print(f"📱 Login page accessed - Session user_id: {session.get('user_id')}")
-    
-    # If already logged in, go to dashboard
-    if 'user_id' in session:
-        print(f"✅ User already logged in, redirecting to dashboard")
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        data = request.get_json()
-        email = data.get('email')
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id FROM dashboard_users WHERE email = ?", (email,))
-        user = cursor.fetchone()
-        conn.close()
-        
-        if user:
-            session['user_id'] = user['user_id']
-            return jsonify({'success': True})
-        
-        return jsonify({'error': 'Invalid credentials'}), 401
-    
-    return render_template('login.html')
 
-@app.route('/auth/discord')
-def auth_discord():
-    """Redirect to Discord OAuth2 authorization"""
-    client_id = os.getenv('DISCORD_CLIENT_ID')
-    redirect_uri = os.getenv('DISCORD_REDIRECT_URI')
-    
-    discord_auth_url = f"https://discord.com/api/oauth2/authorize"
-    params = {
-        'client_id': client_id,
-        'redirect_uri': redirect_uri,
-        'response_type': 'code',
-        'scope': 'identify email guilds'
-    }
-    
-    query_string = '&'.join([f'{k}={v}' for k, v in params.items()])
-    auth_url = f"{discord_auth_url}?{query_string}"
-    
-    return redirect(auth_url)
-
-@app.route('/callback')
-def callback():
-    """Discord OAuth2 callback"""
-    code = request.args.get('code')
-    error = request.args.get('error')
-    
-    if error or not code:
-        print("❌ No code or error from Discord")
-        return redirect(url_for('login'))
-    
-    try:
-        # Exchange code for token
-        client_id = os.getenv('DISCORD_CLIENT_ID')
-        client_secret = os.getenv('DISCORD_CLIENT_SECRET')
-        redirect_uri = os.getenv('DISCORD_REDIRECT_URI')
+class Music(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.manager = MusicManager()
+        self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True, 'no-warnings': True}
         
-        print(f"🔄 Exchanging code for token...")
-        print(f"   Client ID: {client_id}")
-        print(f"   Redirect URI: {redirect_uri}")
-        
-        token_url = 'https://discord.com/api/oauth2/token'
-        data = {
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': redirect_uri
+        # Build FFMPEG options - only set executable if explicitly found
+        self.FFMPEG_OPTIONS = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': '-vn -b:a 128k'
         }
+        if FFMPEG_EXE:
+            self.FFMPEG_OPTIONS['executable'] = FFMPEG_EXE
         
-        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-        resp = requests.post(token_url, data=data, headers=headers)
-        resp.raise_for_status()
+        print(f"🎵 Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
+
+    async def check_voice_channels(self, ctx: commands.Context) -> bool:
+        if not ctx.voice_client:
+            await ctx.send("🎧 I'm not in a voice channel!")
+            return False
+        if not ctx.author.voice or ctx.author.voice.channel != ctx.voice_client.channel:
+            await ctx.send("🚫 You must be in my voice channel!")
+            return False
+        return True
+
+    async def update_vc_status(self, text: str):
+        """Updates the Bot's Activity AND the Voice Channel Status bubble."""
+        await self.bot.change_presence(activity=discord.Game(name=text))
+        for vc in self.bot.voice_clients:
+            try:
+                # Note: The bot MUST have 'Manage Channels' permission for this to work
+                await vc.channel.edit(status=text)
+            except Exception as e:
+                pass
+
+    class PlayerView(discord.ui.View):
+        def __init__(self, cog: 'Music', ctx: commands.Context, song_info: dict):
+            super().__init__(timeout=None)
+            self.cog = cog
+            self.ctx = ctx
+            self.song_info = song_info
+
+        def create_embed(self):
+            m = self.cog.manager
+            elapsed = int(time.time() - m.start_time) if m.start_time > 0 else 0
+            total = self.song_info.get('duration', 0) or 0
+            bar_size = 15
+            progress = int((elapsed / total) * bar_size) if total > 0 else 0
+            bar = "▬" * progress + "🔘" + "▬" * max(0, bar_size - progress - 1)
+
+            def fmt(s): return f"{s//60:02d}:{s%60:02d}"
+            loop_statuses = ["Off", "🔂 Song", "🔁 Queue"]
+
+            embed = discord.Embed(
+                title=self.song_info.get('title', 'Playing'),
+                url=self.song_info.get('webpage_url'),
+                color=discord.Color.from_rgb(30, 30, 30)
+            )
+            embed.set_thumbnail(url=self.song_info.get('thumbnail'))
+            embed.add_field(name="Timeline", value=f"`{fmt(elapsed)}` {bar} `{fmt(total)}`", inline=False)
+            embed.add_field(name="Status", value=f"🔊 {int(m.volume * 100)}% | 🔄 Loop: {loop_statuses[m.loop_mode]}", inline=True)
+            embed.add_field(name="Queue", value=f"🎶 {len(m.queue)} songs", inline=True)
+            return embed
+
+        @discord.ui.button(label="Pause/Resume", style=discord.ButtonStyle.blurple, row=0)
+        async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.ctx.voice_client.is_playing():
+                self.ctx.voice_client.pause()
+                await self.cog.update_vc_status("☕ Chilling...")
+                await interaction.response.send_message("⏸️ Music paused.", ephemeral=True)
+            elif self.ctx.voice_client.is_paused():
+                self.ctx.voice_client.resume()
+                await self.cog.update_vc_status(f"🔊 Playing now: {self.song_info['title']}")
+                await interaction.response.send_message("▶️ Music resumed.", ephemeral=True)
+            await interaction.message.edit(embed=self.create_embed(), view=self)
+
+        @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.gray, row=0)
+        async def shuffle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if len(self.cog.manager.queue) < 2:
+                return await interaction.response.send_message("Not enough songs to shuffle!", ephemeral=True)
+            random.shuffle(self.cog.manager.queue)
+            await interaction.response.send_message("🔀 Queue shuffled!", ephemeral=True)
+            await interaction.message.edit(embed=self.create_embed(), view=self)
+
+        @discord.ui.button(label="Loop: Off", style=discord.ButtonStyle.gray, row=0)
+        async def loop_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+            m = self.cog.manager
+            m.loop_mode = (m.loop_mode + 1) % 3
+            modes = ["Loop: Off", "Loop: Song", "Loop: Queue"]
+            button.label = modes[m.loop_mode]
+            await interaction.response.edit_message(embed=self.create_embed(), view=self)
+
+        @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.gray, row=1)
+        async def restart_song(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if not await self.cog.check_voice_channels(self.ctx):
+                return
+            await interaction.response.defer()
+            self.ctx.voice_client.stop()
+            self.cog.manager.queue.insert(0, self.song_info)
+            await interaction.followup.send("⏮️ Restarting song...", ephemeral=True)
+
+        @discord.ui.button(emoji="⏪", style=discord.ButtonStyle.gray, row=1)
+        async def backward(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.seek_helper(interaction, -10)
+
+        @discord.ui.button(emoji="⏩", style=discord.ButtonStyle.gray, row=1)
+        async def forward(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.seek_helper(interaction, 10)
+
+        @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.gray, row=1)
+        async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+            self.ctx.voice_client.stop()
+            await interaction.response.send_message("⏭️ Skipped!", ephemeral=True)
+
+        @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.gray, row=2)
+        async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
+            m = self.cog.manager
+            m.volume = max(0.0, m.volume - 0.1)
+            if self.ctx.voice_client and self.ctx.voice_client.source:
+                try:
+                    self.ctx.voice_client.source.volume = m.volume
+                except Exception:
+                    pass
+            await interaction.response.send_message(f"🔊 Volume set to {int(m.volume*100)}%", ephemeral=True)
+            await interaction.message.edit(embed=self.create_embed(), view=self)
+
+        @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.gray, row=2)
+        async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
+            m = self.cog.manager
+            m.volume = min(2.0, m.volume + 0.1)
+            if self.ctx.voice_client and self.ctx.voice_client.source:
+                try:
+                    self.ctx.voice_client.source.volume = m.volume
+                except Exception:
+                    pass
+            await interaction.response.send_message(f"🔊 Volume set to {int(m.volume*100)}%", ephemeral=True)
+            await interaction.message.edit(embed=self.create_embed(), view=self)
+
+        async def seek_helper(self, interaction: discord.Interaction, seconds: int):
+            if not await self.cog.check_voice_channels(self.ctx):
+                return
+            await interaction.response.defer()
+            m = self.cog.manager
+            elapsed = int(time.time() - m.start_time) if m.start_time else 0
+            new_time = max(0, elapsed + seconds)
+            if self.ctx.voice_client:
+                try:
+                    if self.ctx.voice_client.source:
+                        self.ctx.voice_client.source.cleanup()
+                except Exception:
+                    pass
+                self.ctx.voice_client.stop()
+                await asyncio.sleep(0.5)
+                opts = dict(self.cog.FFMPEG_OPTIONS)
+                opts['before_options'] = f"-ss {new_time} " + self.cog.FFMPEG_OPTIONS['before_options']
+                source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(self.song_info['url'], **opts))
+                source.volume = m.volume
+                m.queue.insert(0, self.song_info)
+                self.ctx.voice_client.play(source, after=lambda e: self.cog.play_next(self.ctx.guild.id))
+                m.start_time = time.time() - new_time
+                await interaction.message.edit(embed=self.create_embed(), view=self)
+
+    # Note: play_next is now guild-based and called via 'after' callback automatically
+
+    def play_next(self, guild_id: int):
+        """Play next song in queue using guild_id (not context-dependent)."""
+        m = self.manager
         
-        token_data = resp.json()
-        access_token = token_data.get('access_token')
-        print(f"✅ Got access token")
+        # Get voice client using guild_id (not context-specific)
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            print(f"❌ Guild {guild_id} not found")
+            return
         
-        # Get user info
-        user_url = 'https://discord.com/api/users/@me'
-        headers = {'Authorization': f'Bearer {access_token}'}
-        user_resp = requests.get(user_url, headers=headers)
-        user_resp.raise_for_status()
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=guild)
+        if not voice_client:
+            print(f"❌ No voice client for guild {guild_id}")
+            m.current = None
+            return
         
-        user_data = user_resp.json()
-        user_id = str(user_data.get('id'))
-        username = user_data.get('username')
-        email = user_data.get('email')
+        # Cleanup previous source
+        if voice_client.source:
+            try:
+                voice_client.source.cleanup()
+            except Exception:
+                pass
+
+        # 1. Handle Loop Modes
+        if m.current:
+            if m.loop_mode == 1:
+                m.queue.insert(0, m.current)
+            elif m.loop_mode == 2:
+                m.queue.append(m.current)
+
+        # 2. Play next song
+        if len(m.queue) > 0:
+            m.current = m.queue.pop(0)
+            m.start_time = time.time()
+
+            status_text = f"🔊 Playing now: {m.current['title']}"
+            asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
+
+            try:
+                source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
+                source.volume = m.volume
+                # Use guild_id in lambda instead of context
+                voice_client.play(source, after=lambda e: self.play_next(guild_id))
+                
+                # Create fake ctx for send_now_playing (we'll refactor this next)
+                # For now, just update status
+                asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
+            except Exception as e:
+                print(f"❌ Play Error: {str(e)}")
+                asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+                # Skip to next song on error
+                self.play_next(guild_id)
+        else:
+            m.current = None
+            asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+
+    async def send_now_playing(self, ctx: commands.Context):
+        m = self.manager
+        if not m.current:
+            return
+        view = self.PlayerView(self, ctx, m.current)
+        embed = view.create_embed()
+        if m.player_message:
+            try:
+                await m.player_message.delete()
+            except Exception:
+                pass
+        m.player_message = await ctx.send(embed=embed, view=view)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print(f'🎵 Music cog loaded!')
+        self.bot.loop.create_task(self.idle_check())
+    
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """Handle voice state changes - clean up if bot disconnected"""
+        if member == self.bot.user:
+            if before.channel and not after.channel:
+                # Bot was disconnected
+                self.manager.queue.clear()
+                self.manager.current = None
+                print("🎵 Bot disconnected from voice channel")
+
+    async def idle_check(self):
+        idle_times = {}
+        while not self.bot.is_closed():
+            await asyncio.sleep(30)
+            for vc in self.bot.voice_clients:
+                if vc.is_paused() or not vc.is_playing():
+                    idle_times[vc.guild.id] = idle_times.get(vc.guild.id, 0) + 30
+                    if idle_times[vc.guild.id] >= 180:  # 180s = 3 minutes
+                        await self.update_vc_status("☕ Chilling...")
+                else:
+                    idle_times[vc.guild.id] = 0
+
+    # --- COMMANDS ---
+
+    @commands.command(aliases=['p'])
+    async def play(self, ctx: commands.Context, *, search: str):
+        """Plays a song from YouTube."""
+        if not ctx.author.voice:
+            return await ctx.send("❌ Join a voice channel first!")
         
-        print(f"✅ Got user info: {username} ({user_id})")
+        # Get or create voice client for this guild
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        if not voice_client:
+            try:
+                voice_client = await ctx.author.voice.channel.connect()
+            except Exception as e:
+                error_msg = str(e) if str(e) else "Unable to join voice channel"
+                print(f"Play join error: {error_msg}")
+                return await ctx.send(f"❌ Can't join: {error_msg[:100]}")
+
+        async with ctx.typing():
+            try:
+                with yt_dlp.YoutubeDL(self.YDL_OPTIONS) as ydl:
+                    search_query = f"ytsearch:{search}" if not search.startswith("http") else search
+                    info = ydl.extract_info(search_query, download=False)
+                    if 'entries' in info:
+                        info = info['entries'][0]
+
+                    self.manager.queue.append(info)
+                    await ctx.send(f"✅ Added to queue: **{info['title']}**", delete_after=10)
+
+                    if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
+                        self.play_next(ctx.guild.id)
+            except yt_dlp.utils.DownloadError as e:
+                if "Sign in to confirm you're not a bot" in str(e):
+                    await ctx.send("❌ YouTube is blocking this request. Try a different song or source.")
+                else:
+                    await ctx.send(f"❌ YouTube error: {str(e)[:100]}")
+            except Exception as e:
+                error_str = str(e).lower()
+                print(f"Play error: {str(e)}")
+                if "ffmpeg" in error_str or ".exe" in error_str:
+                    await ctx.send("❌ Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
+                elif "not found" in error_str:
+                    await ctx.send("❌ Song not found. Try a different search term.")
+                else:
+                    await ctx.send(f"❌ Error: {str(e)[:100]}")
+
+    @commands.command(aliases=['q'])
+    async def queue(self, ctx: commands.Context):
+        """Displays the next 10 songs in the queue."""
+        if not self.manager.queue:
+            return await ctx.send("The queue is currently empty! ☕")
+
+        description = ""
+        for i, song in enumerate(self.manager.queue[:10], 1):
+            description += f"**{i}.** {song['title']}\n"
+
+        embed = discord.Embed(title="🎶 Current Queue", description=description, color=discord.Color.blue())
+        await ctx.send(embed=embed)
+
+    @commands.command(aliases=['s'])
+    async def skip(self, ctx: commands.Context):
+        if not await self.check_voice_channels(ctx):
+            return
+        ctx.voice_client.stop()
+        await ctx.send("⏭️ Skipped!")
+
+    @commands.command()
+    async def pause(self, ctx: commands.Context):
+        if not await self.check_voice_channels(ctx):
+            return
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.pause()
+            await self.update_vc_status("☕ Chilling...")
+            await ctx.send("⏸️ Paused.")
+
+    @commands.command()
+    async def resume(self, ctx: commands.Context):
+        if not await self.check_voice_channels(ctx):
+            return
+        if ctx.voice_client.is_paused():
+            ctx.voice_client.resume()
+            if self.manager.current:
+                await self.update_vc_status(f"🔊 Playing now: {self.manager.current['title']}")
+            await ctx.send("▶️ Resumed.")
+
+    @commands.command(aliases=['leave', 'disconnect'])
+    async def stop(self, ctx: commands.Context):
+        """Stops the music and disconnects the bot."""
+        # Get the actual voice client from the bot for this guild
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         
-        # Store user in database
-        conn = get_db()
-        cursor = conn.cursor()
+        if not voice_client:
+            return await ctx.send("❌ I'm not in a voice channel!")
         
-        cursor.execute("""
-            INSERT OR REPLACE INTO dashboard_users 
-            (user_id, username, email, api_token, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_id, username, email, access_token, datetime.now().isoformat()))
+        # Clear queue and stop music
+        self.manager.queue.clear()
+        self.manager.current = None
         
-        # Get user's guilds from Discord API
-        guilds_url = 'https://discord.com/api/users/@me/guilds'
-        guilds_resp = requests.get(guilds_url, headers=headers)
-        user_guilds = guilds_resp.json() if guilds_resp.ok else []
+        if voice_client.is_playing():
+            voice_client.stop()
         
-        print(f"📋 Got {len(user_guilds)} guilds from Discord API")
+        # Disconnect
+        await voice_client.disconnect(force=True)
+        await self.update_vc_status("☕ Chilling...")
+        await ctx.send("👋 Disconnected.")
+
+    @commands.command(aliases=['v', 'vol'])
+    async def volume(self, ctx: commands.Context, vol: int):
+        """Changes the volume (0-200)."""
+        if not await self.check_voice_channels(ctx):
+            return
+        self.manager.volume = vol / 100
+        if ctx.voice_client.source:
+            ctx.voice_client.source.volume = self.manager.volume
+        await ctx.send(f"🔊 Volume set to {vol}%")
+
+    @commands.command()
+    async def join(self, ctx: commands.Context):
+        """Join the voice channel."""
+        if not ctx.author.voice:
+            return await ctx.send("❌ Join a VC first!")
         
-        # Add ALL guilds where user has any role (not just admin/owner)
-        saved_count = 0
-        for guild in user_guilds:
-            guild_id = guild.get('id')
-            # Check if user is owner (bit 3 = ADMINISTRATOR permission)
-            permissions = int(guild.get('permissions', 0))
-            is_admin = (permissions & 8) == 8  # ADMINISTRATOR permission
-            is_owner = guild.get('owner', False)
-            
-            # Determine role - even if user is member only, add them with 'member' role
-            if is_owner:
-                role = 'owner'
-            elif is_admin:
-                role = 'admin'
-            else:
-                role = 'member'  # Add all members, not just admins
-            
-            cursor.execute("""
-                INSERT OR REPLACE INTO user_guilds (user_id, guild_id, role)
-                VALUES (?, ?, ?)
-            """, (user_id, guild_id, role))
-            saved_count += 1
+        target_channel = ctx.author.voice.channel
         
-        conn.commit()
-        print(f"✅ Saved {saved_count} guilds to database")
-        conn.close()
+        # Get current bot voice client for this guild
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         
-        # SET SESSION - ORDER MATTERS!
-        print(f"📝 Setting session...")
-        session.permanent = True
-        session['user_id'] = user_id
-        session['username'] = username
-        session['email'] = email
+        # If bot is already in a voice channel
+        if voice_client:
+            # If already in the same channel, do nothing
+            if voice_client.channel == target_channel:
+                return await ctx.send("✅ Already in your channel!")
+            # If in different channel, disconnect first
+            try:
+                await voice_client.disconnect(force=True)
+                await asyncio.sleep(1.0)
+            except Exception as e:
+                print(f"Error disconnecting: {e}")
         
-        print(f"✅ Session set: {{'user_id': '{user_id}', 'username': '{username}'}}")
-        print(f"✅ Redirecting to /dashboard")
+        # Now join
+        try:
+            await target_channel.connect()
+            await self.update_vc_status("☕ Chilling...")
+            await ctx.send("✅ Joined!")
+        except Exception as e:
+            error_msg = str(e) if str(e) else "Unknown error"
+            print(f"Join error: {error_msg}")
+            await ctx.send(f"❌ Can't join: {error_msg[:100]}")
+
+    @commands.command(aliases=['c'])
+    async def clear(self, ctx: commands.Context):
+        self.manager.queue.clear()
+        await ctx.send("🧹 Queue cleared!")
+
+    @commands.command(aliases=['np'])
+    async def nowplaying(self, ctx: commands.Context):
+        """Shows the currently playing song with player controls."""
+        if not self.manager.current:
+            return await ctx.send("No song is currently playing! ☕")
+        await self.send_now_playing(ctx)
+
+    @commands.command()
+    async def ffmpegtest(self, ctx: commands.Context):
+        """DEBUG: Check FFmpeg status on the server."""
+        import shutil
+        ffmpeg_path = shutil.which('ffmpeg')
         
-        return redirect('/dashboard')
-        
-    except Exception as e:
-        print(f"❌ Auth error: {e}")
-        import traceback
-        traceback.print_exc()
-        return redirect(url_for('login'))
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-@app.route('/dashboard')
-def dashboard():
-    print(f"📊 Dashboard route - Session: {dict(session)}")
-    print(f"📊 user_id in session: {'user_id' in session}")
-    
-    if 'user_id' not in session:
-        print("❌ No user_id in session, redirecting to login")
-        return redirect(url_for('login'))
-    
-    print(f"✅ User {session.get('username')} accessing dashboard")
-    return render_template('dashboard.html')
-
-# API Endpoints
-
-@app.route('/api/user-info')
-def api_user_info():
-    """Get current user info"""
-    print(f"🔍 User info check - Session: {dict(session)}")
-    
-    if 'user_id' not in session:
-        print("❌ Not authenticated")
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user_info = {
-        'user_id': session.get('user_id'),
-        'username': session.get('username'),
-        'email': session.get('email')
-    }
-    
-    print(f"✅ Returning user info: {user_info}")
-    return jsonify(user_info)
-
-@app.route('/api/bot-stats')
-def api_bot_stats():
-    """Get bot statistics from live Discord bot"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    # Get REAL data from bot connector
-    stats = bot_connector.get_bot_stats()
-    return jsonify(stats)
+        status = f"""
+🎵 **FFmpeg Debug Info:**
+- Detected path: `{FFMPEG_EXE or 'Not found'}`
+- In PATH: `{ffmpeg_path or 'Not found'}`
+- FFMPEG_OPTIONS: `{self.FFMPEG_OPTIONS}`
+- Bot voice clients: `{len(self.bot.voice_clients)}`
+        """
+        await ctx.send(status)
 
 
-@app.route('/api/invite-url')
-def api_invite_url():
-    """Get bot invite URL."""
-    client_id = os.getenv('DISCORD_CLIENT_ID')
-    if not client_id:
-        return jsonify({'error': 'Client ID not configured'}), 500
-    
-    invite_url = f"https://discord.com/oauth2/authorize?client_id={client_id}&scope=bot&permissions=8"
-    return jsonify({'invite_url': invite_url})
-
-
-@app.route('/api/servers')
-def api_servers():
-    """Get list of servers for the logged-in user"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user_id = session['user_id']
-    print(f"📊 API: Getting servers for user {user_id}")
-    
-    # Get user's guilds from database (saved during OAuth login)
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT guild_id, role FROM user_guilds WHERE user_id = ?
-    """, (user_id,))
-    user_guild_data = cursor.fetchall()
-    conn.close()
-    
-    print(f"📊 User has {len(user_guild_data)} servers in database")
-    
-    if not user_guild_data:
-        print(f"⚠️ User has NO servers in database!")
-        return jsonify([])
-    
-    # Get ALL servers bot is in
-    all_servers = bot_connector.get_servers()
-    if all_servers is None:
-        all_servers = []
-    print(f"🔍 Bot knows about {len(all_servers)} servers")
-    
-    # Filter: return servers bot is in that user has access to
-    user_guild_ids = [str(row[0]) for row in user_guild_data]
-    user_servers = [s for s in all_servers if str(s.get('id')) in user_guild_ids]
-    
-    # If bot doesn't know about a server yet, create a placeholder
-    if len(user_servers) < len(user_guild_data):
-        bot_server_ids = [s.get('id') for s in all_servers]
-        for guild_id, role in user_guild_data:
-            if str(guild_id) not in bot_server_ids:
-                user_servers.append({
-                    'id': str(guild_id),
-                    'name': f'Server {guild_id}',  # Placeholder
-                    'members': 0,
-                    'owner': None,
-                    'icon': None,
-                    'created': None,
-                    'role': role
-                })
-    
-    print(f"✅ Returning {len(user_servers)} servers for user")
-    
-    return jsonify(user_servers)
-
-
-@app.route('/api/commands')
-def api_commands():
-    """Get list of available commands"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    # Get REAL commands from bot
-    commands = bot_connector.get_commands_list()
-    return jsonify(commands)
-
-
-@app.route('/api/features')
-def api_features():
-    """Get all bot features and their status"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    # Get REAL cogs/features from bot
-    cogs = bot_connector.get_cogs_info()
-    
-    features = []
-    for cog_name, cog_info in cogs.items():
-        features.append({
-            'name': cog_info['name'],
-            'enabled': cog_info['loaded'],
-            'description': f"{cog_info['commands']} commands",
-            'category': cog_name
-        })
-    
-    return jsonify(features)
-
-
-@app.route('/api/members')
-def api_members():
-    """Get server members"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    guild_id = request.args.get('guild_id', type=int)
-    
-    if guild_id:
-        # Get members from specific guild
-        members = bot_connector.get_server_members(guild_id)
-    else:
-        # Get all members from all guilds
-        members = []
-        for guild in bot_connector.get_servers():
-            guild_members = bot_connector.get_server_members(int(guild['id']))
-            members.extend(guild_members)
-    
-    return jsonify(members)
-
-
-@app.route('/api/server/<int:guild_id>/config')
-def api_server_config(guild_id):
-    """Get real configuration for a specific server"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user_id = session['user_id']
-    
-    # Check if user has access to this guild
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
-    access = cursor.fetchone()
-    
-    if not access:
-        conn.close()
-        return jsonify({'error': 'Access denied'}), 403
-    
-    # Get guild info from bot
-    guild_info = bot_connector.get_guild_info(guild_id)
-    
-    # Get saved settings from database
-    cursor.execute("SELECT settings, prefix FROM guilds WHERE guild_id = ?", (guild_id,))
-    guild_row = cursor.fetchone()
-    saved_settings = json.loads(guild_row['settings']) if guild_row and guild_row['settings'] else {}
-    prefix = guild_row['prefix'] if guild_row else '!'
-    
-    # Get loaded cogs/features
-    cogs = bot_connector.get_cogs_info()
-    features = []
-    for cog_name, cog_info in cogs.items():
-        features.append({
-            'name': cog_info['name'],
-            'enabled': cog_info['loaded'],
-            'commands': cog_info['commands']
-        })
-    
-    conn.close()
-    
-    return jsonify({
-        'guild_info': guild_info,
-        'settings': saved_settings,
-        'prefix': prefix,
-        'features': features,
-        'members_count': guild_info.get('members', 0)
-    })
-
-
-@app.route('/api/server/<int:guild_id>/stats')
-def api_server_stats(guild_id):
-    """Get real analytics for a specific server"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user_id = session['user_id']
-    
-    # Check access
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Access denied'}), 403
-    
-    days = request.args.get('days', 7, type=int)
-    since = datetime.now() - timedelta(days=days)
-    
-    # Top commands in this server
-    cursor.execute("""
-        SELECT command, COUNT(*) as count, SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successful
-        FROM analytics
-        WHERE guild_id = ? AND timestamp > ? 
-        GROUP BY command
-        ORDER BY count DESC
-        LIMIT 10
-    """, (guild_id, since.isoformat()))
-    
-    top_commands = [{'command': row[0], 'total': row[1], 'successful': row[2]} for row in cursor.fetchall()]
-    
-    # Active members
-    cursor.execute("""
-        SELECT COUNT(DISTINCT user_id) FROM analytics
-        WHERE guild_id = ? AND timestamp > ? AND success = 1
-    """, (guild_id, since.isoformat()))
-    active_users = cursor.fetchone()[0]
-    
-    # Total commands
-    cursor.execute("""
-        SELECT COUNT(*), SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END)
-        FROM analytics
-        WHERE guild_id = ? AND timestamp > ?
-    """, (guild_id, since.isoformat()))
-    total_count, successful_count = cursor.fetchone()
-    
-    conn.close()
-    
-    return jsonify({
-        'top_commands': top_commands,
-        'active_users': active_users,
-        'total_commands': total_count or 0,
-        'successful_commands': successful_count or 0,
-        'period_days': days
-    })
-
-
-@app.route('/api/server/<int:guild_id>/settings', methods=['GET', 'POST'])
-def api_server_settings(guild_id):
-    """Get or update server settings"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user_id = session['user_id']
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check access
-    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if request.method == 'GET':
-        cursor.execute("SELECT settings, prefix FROM guilds WHERE guild_id = ?", (guild_id,))
-        row = cursor.fetchone()
-        settings = json.loads(row['settings']) if row and row['settings'] else {}
-        prefix = row['prefix'] if row else '!'
-        conn.close()
-        return jsonify({'settings': settings, 'prefix': prefix})
-    
-    if request.method == 'POST':
-        data = request.get_json()
-        settings_json = json.dumps(data.get('settings', {}))
-        prefix = data.get('prefix', '!')
-        
-        cursor.execute("""
-            INSERT OR REPLACE INTO guilds (guild_id, settings, prefix, created_at)
-            VALUES (?, ?, ?, ?)
-        """, (guild_id, settings_json, prefix, datetime.now().isoformat()))
-        
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True, 'message': 'Settings saved'})
-
-@app.route('/api/guilds/<int:guild_id>/analytics', methods=['GET'])
-@require_auth
-def get_analytics(user_id, guild_id):
-    """Get analytics for a guild."""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check access
-    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Access denied'}), 403
-    
-    days = request.args.get('days', 7, type=int)
-    since = datetime.now() - timedelta(days=days)
-    
-    # Commands used
-    cursor.execute('''
-        SELECT command, COUNT(*) as count
-        FROM analytics
-        WHERE guild_id = ? AND timestamp > ? AND success = 1
-        GROUP BY command
-        ORDER BY count DESC
-    ''', (guild_id, since.isoformat()))
-    
-    commands = [{'command': row[0], 'count': row[1]} for row in cursor.fetchall()]
-    
-    # Active users
-    cursor.execute('''
-        SELECT COUNT(DISTINCT user_id)
-        FROM analytics
-        WHERE guild_id = ? AND timestamp > ?
-    ''', (guild_id, since.isoformat()))
-    
-    active_users = cursor.fetchone()[0]
-    
-    # Top users
-    cursor.execute('''
-        SELECT user_id, COUNT(*) as count
-        FROM analytics
-        WHERE guild_id = ? AND timestamp > ? AND success = 1
-        GROUP BY user_id
-        ORDER BY count DESC
-        LIMIT 10
-    ''', (guild_id, since.isoformat()))
-    
-    top_users = [{'user_id': row[0], 'count': row[1]} for row in cursor.fetchall()]
-    
-    conn.close()
-    
-    return jsonify({
-        'commands': commands,
-        'active_users': active_users,
-        'top_users': top_users,
-        'period_days': days
-    })
-
-@app.route('/api/guilds/<int:guild_id>/custom-commands', methods=['GET', 'POST'])
-@require_auth
-def custom_commands(user_id, guild_id):
-    """Get or create custom commands."""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check access
-    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Access denied'}), 403
-    
-    if request.method == 'GET':
-        cursor.execute("SELECT * FROM custom_commands WHERE guild_id = ?", (guild_id,))
-        commands = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-        return jsonify(commands)
-    
-    if request.method == 'POST':
-        data = request.get_json()
-        cursor.execute('''
-            INSERT INTO custom_commands (guild_id, command_name, response, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (guild_id, data['command_name'], data['response'], user_id, datetime.utcnow().isoformat()))
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True})
-
-@app.route('/api/guilds/<int:guild_id>/custom-commands/<int:cmd_id>', methods=['DELETE'])
-@require_auth
-def delete_custom_command(user_id, guild_id, cmd_id):
-    """Delete a custom command."""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Check access
-    cursor.execute("SELECT * FROM user_guilds WHERE user_id = ? AND guild_id = ?", (user_id, guild_id))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Access denied'}), 403
-    
-    cursor.execute("DELETE FROM custom_commands WHERE id = ? AND guild_id = ?", (cmd_id, guild_id))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'success': True})
-
-@app.route('/api/analytics', methods=['POST'])
-def log_analytics():
-    """Log command usage (called from bot)."""
-    token = request.headers.get('Authorization', '')
-    if token != 'Bot ' + os.environ.get('BOT_ANALYTICS_TOKEN', 'secret'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    data = request.get_json()
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO analytics (guild_id, command, user_id, timestamp, success)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (data['guild_id'], data['command'], data['user_id'], datetime.utcnow().isoformat(), data.get('success', True)))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'success': True})
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Music(bot))
