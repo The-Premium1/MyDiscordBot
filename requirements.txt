@@ -1,7 +1,6 @@
 discord.py==2.3.0
 python-dotenv==1.0.0
 yt-dlp==2023.11.16
-FFmpeg==1.4
 aiohttp==3.9.1
 psutil==5.9.6
 Flask==3.0.0
