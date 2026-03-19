@@ -313,16 +313,8 @@ class Music(commands.Cog):
                 print("🎵 Bot disconnected from voice channel")
 
     async def idle_check(self):
-        idle_times = {}
-        while not self.bot.is_closed():
-            await asyncio.sleep(30)
-            for vc in self.bot.voice_clients:
-                if vc.is_paused() or not vc.is_playing():
-                    idle_times[vc.guild.id] = idle_times.get(vc.guild.id, 0) + 30
-                    if idle_times[vc.guild.id] >= 180:  # 180s = 3 minutes
-                        await self.update_vc_status("☕ Chilling...")
-                else:
-                    idle_times[vc.guild.id] = 0
+        """Disabled: was causing bot to disconnect after 3 mins of silence"""
+        return
 
     # --- COMMANDS ---
 
@@ -351,7 +343,7 @@ class Music(commands.Cog):
                         info = info['entries'][0]
 
                     self.manager.queue.append(info)
-                    await ctx.send(f"✅ Added to queue: **{info['title']}**", delete_after=10)
+                    await ctx.send(f"✅ Added to queue: **{info['title']}**")
 
                     if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
                         self.play_next(ctx.guild.id)
