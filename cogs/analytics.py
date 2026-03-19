@@ -5,7 +5,8 @@ from datetime import datetime
 import os
 
 ANALYTICS_TOKEN = os.environ.get('BOT_ANALYTICS_TOKEN', 'secret')
-DASHBOARD_URL = os.environ.get('DASHBOARD_URL', 'http://localhost:5000')
+# Use environment variable for dashboard URL, with fallback for local development
+DASHBOARD_URL = os.environ.get('DASHBOARD_URL', 'http://localhost:5000').rstrip('/')
 
 
 class Analytics(commands.Cog):
