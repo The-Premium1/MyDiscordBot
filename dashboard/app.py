@@ -759,5 +759,49 @@ def log_analytics():
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    import sys
+    
+    # Debug output
+    print("\n" + "="*50)
+    print("🚀 STARTING FLASK APP")
+    print("="*50)
+    print(f"Environment PORT var: '{os.environ.get('PORT', 'NOT SET')}'")
+    print(f"Environment FLASK_PORT var: '{os.environ.get('FLASK_PORT', 'NOT SET')}'")
+    
+    # Try multiple ways to get port
+    port = None
+    
+    # Method 1: Try FLASK_PORT first (set by bash script)
+    if 'FLASK_PORT' in os.environ:
+        try:
+            port = int(os.environ['FLASK_PORT'])
+            print(f"✅ Got FLASK_PORT: {port}")
+        except:
+            pass
+    
+    # Method 2: Try PORT env var
+    if port is None and 'PORT' in os.environ:
+        port_str = os.environ['PORT'].strip()
+        # Remove $ if literal
+        if port_str.startswith('$'):
+            port_str = port_str[1:]
+        try:
+            port = int(port_str)
+            print(f"✅ Got PORT: {port}")
+        except (ValueError, TypeError) as e:
+            print(f"⚠️ PORT parsing failed: {e}, port_str='{port_str}'")
+    
+    # Fallback
+    if port is None:
+        port = 5000
+        print(f"⚠️ Using fallback port: {port}")
+    
+    print(f"Final port: {port}")
+    print("="*50 + "\n")
+    
+    # Ensure port is valid
+    if not isinstance(port, int) or port < 1 or port > 65535:
+        print(f"❌ FATAL: Invalid port {port}, using 5000")
+        port = 5000
+    
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
