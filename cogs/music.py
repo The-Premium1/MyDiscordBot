@@ -384,12 +384,14 @@ class Music(commands.Cog):
                     print(f"âŒ Attempt {attempt + 1} failed: {str(e)}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1.0)
-                    else:                        # Bot may have already joined despite error, so don't show error
+                    else:
+                        # Bot may have already joined despite error, so don't show error
                         # The 4006 error is a Discord gateway issue that doesn't always prevent joining
                         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
                         if voice_client and voice_client.is_connected():
                             print(f"Voice client connected despite error")
-                            break                        error_msg = str(e) if str(e) else "Unable to join voice channel"
+                            break
+                        error_msg = str(e) if str(e) else "Unable to join voice channel"
                         print(f"Play join error: {error_msg}")
                         return await ctx.send(f"Can't join: {error_msg[:100]}")
 
