@@ -1,13 +1,31 @@
 #!/bin/bash
-# Dashboard Startup Script for Linux/Mac
+# Dashboard Startup Script for Railway - Handle PORT properly
 
-echo "===================================="
-echo "Discord Bot Dashboard Startup"
-echo "===================================="
+echo "🚀 Starting Dashboard..."
+echo "PORT env var: '$PORT'"
 
-# Check if Python is installed
-if ! command -v python3 &> /dev/null; then
-    echo "Error: Python3 is not installed"
+# Handle PORT - Railway sometimes passes it as literal $PORT string
+if [ -z "$PORT" ]; then
+    echo "⚠️ PORT not set, using 5000"
+    PORT=5000
+else
+    # Remove $ if present
+    PORT=$(echo "$PORT" | sed 's/^\$//')
+    # Ensure it's numeric
+    if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+        echo "⚠️ PORT '$PORT' is not numeric, using 5000"
+        PORT=5000
+    fi
+fi
+
+echo "✅ Using PORT: $PORT"
+export FLASK_PORT=$PORT
+
+# Change to dashboard directory
+cd /app/dashboard || exit 1
+
+# Run Python app
+exec python app.py
     exit 1
 fi
 
