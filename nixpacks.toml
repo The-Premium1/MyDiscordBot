@@ -1,0 +1,5 @@
+[build]
+pkgs = ["ffmpeg", "libopus", "libsodium", "python311"]
+
+[build.run]
+cmd = ["python", "-m", "pip", "install", "-r", "requirements.txt"]
