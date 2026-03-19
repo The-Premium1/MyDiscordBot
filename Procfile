@@ -1,2 +1,2 @@
-web: cd dashboard && python app.py
+web: cd dashboard && python start.py
 worker: python main.py
