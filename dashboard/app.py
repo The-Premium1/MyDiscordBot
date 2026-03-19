@@ -30,6 +30,11 @@ load_dotenv(dotenv_path=env_path)
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
+# Check if DEBUG mode is enabled via environment variable
+DEBUG_MODE = os.getenv('DEBUG', 'false').lower() == 'true'
+print(f"🔧 DEBUG mode from env: {DEBUG_MODE}")
+app.config['DEBUG'] = DEBUG_MODE
+
 # CRITICAL: Fixed secret key that persists
 SECRET_KEY = os.getenv('SECRET_KEY') or 'fixed-secret-key-for-sessions-12345'
 app.secret_key = SECRET_KEY
