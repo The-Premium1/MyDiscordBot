@@ -563,9 +563,32 @@ class Music(commands.Cog):
             await ctx.send("Connection timed out. Try again!")
             print(f"âŒ Join timeout for {target_channel.name}")
         except Exception as e:
-            error_msg = str(e)[:80]
-            await ctx.send(f"Can't join: {error_msg}")
+            error_msg = str(e)
+            # Don't show 4006 errors to user - they often succeed anyway
+            if "4006" not in error_msg:
+                await ctx.send(f"Can't join: {error_msg[:80]}")
             print(f"âŒ Join error: {error_msg}")
+
+    @commands.command()
+    async def ffmpeg(self, ctx: commands.Context):
+        """Check FFmpeg status and system info."""
+        ffmpeg_status = "Found" if FFMPEG_EXE else "NOT FOUND"
+        ffmpeg_path = FFMPEG_EXE or "Not installed"
+        
+        embed = discord.Embed(title="FFmpeg Status", color=discord.Color.green() if FFMPEG_EXE else discord.Color.red())
+        embed.add_field(name="Status", value=ffmpeg_status, inline=False)
+        embed.add_field(name="Path", value=f"`{ffmpeg_path}`", inline=False)
+        embed.add_field(name="System", value=f"Python {__import__('sys').version.split()[0]}", inline=False)
+        
+        # Try to get FFmpeg version
+        try:
+            result = subprocess.run([FFMPEG_EXE or 'ffmpeg', '-version'], capture_output=True, text=True, timeout=2)
+            version_line = result.stdout.split('\n')[0] if result.stdout else "Unable to get version"
+            embed.add_field(name="Version", value=f"```{version_line}```", inline=False)
+        except:
+            embed.add_field(name="Version", value="Unable to detect", inline=False)
+        
+        await ctx.send(embed=embed)
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
