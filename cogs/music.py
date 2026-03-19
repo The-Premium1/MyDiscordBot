@@ -14,6 +14,10 @@ logging.basicConfig(level=logging.INFO)
 FFMPEG_EXE = None
 if os.path.exists('/usr/bin/ffmpeg'):  # Linux/Railway
     FFMPEG_EXE = '/usr/bin/ffmpeg'
+elif os.path.exists('/usr/local/bin/ffmpeg'):  # Alternative Linux path
+    FFMPEG_EXE = '/usr/local/bin/ffmpeg'
+elif os.path.exists('ffmpeg'):  # Check if ffmpeg is in PATH
+    FFMPEG_EXE = 'ffmpeg'
 else:
     # Try local path for Windows dev
     local_path = os.path.join(os.path.dirname(__file__), '..', 'ffmpeg.exe')
@@ -224,11 +228,16 @@ class Music(commands.Cog):
             status_text = f"🔊 Playing now: {m.current['title']}"
             asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
 
-            source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
-            source.volume = m.volume
-            ctx.voice_client.play(source, after=lambda e: self.play_next(ctx))
-
-            asyncio.run_coroutine_threadsafe(self.send_now_playing(ctx), self.bot.loop)
+            try:
+                source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
+                source.volume = m.volume
+                ctx.voice_client.play(source, after=lambda e: self.play_next(ctx))
+                asyncio.run_coroutine_threadsafe(self.send_now_playing(ctx), self.bot.loop)
+            except Exception as e:
+                print(f"❌ FFmpeg Error: {str(e)}")
+                asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+                # Skip to next song on error
+                self.play_next(ctx)
         else:
             m.current = None
             asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
@@ -292,11 +301,13 @@ class Music(commands.Cog):
                 else:
                     await ctx.send(f"❌ YouTube error: {str(e)[:100]}")
             except Exception as e:
-                error_str = str(e)
-                if "ffmpeg" in error_str.lower():
-                    await ctx.send("❌ Audio system error. Try again later.")
+                error_str = str(e).lower()
+                if "ffmpeg" in error_str:
+                    await ctx.send("❌ Audio system error. Make sure FFmpeg is installed. Try again in a moment.")
+                elif "not found" in error_str:
+                    await ctx.send("❌ Song not found. Try a different search term.")
                 else:
-                    await ctx.send(f"❌ Error: {error_str[:100]}")
+                    await ctx.send(f"❌ Error: {str(e)[:100]}")
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx: commands.Context):
@@ -340,11 +351,18 @@ class Music(commands.Cog):
     @commands.command(aliases=['leave', 'disconnect'])
     async def stop(self, ctx: commands.Context):
         """Stops the music and disconnects the bot."""
-        if not await self.check_voice_channels(ctx):
-            return
+        if not ctx.voice_client:
+            return await ctx.send("❌ I'm not in a voice channel!")
+        
+        # Clear queue and stop music
         self.manager.queue.clear()
-        ctx.voice_client.stop()
-        await ctx.voice_client.disconnect()
+        self.manager.current = None
+        
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
+        
+        # Disconnect
+        await ctx.voice_client.disconnect(force=True)
         await self.update_vc_status("☕ Chilling...")
         await ctx.send("👋 Disconnected.")
 
@@ -364,15 +382,18 @@ class Music(commands.Cog):
         if not ctx.author.voice:
             return await ctx.send("❌ Join a VC first!")
         
-        # Check if bot is already in a voice channel
-        if ctx.voice_client:
-            # If in the same channel, do nothing
-            if ctx.voice_client.channel == ctx.author.voice.channel:
-                return await ctx.send("✅ Already in your channel!")
-            # If in a different channel, disconnect first
-            await ctx.voice_client.disconnect()
+        target_channel = ctx.author.voice.channel
         
-        await ctx.author.voice.channel.connect()
+        # Check if bot is already in the same channel
+        if ctx.voice_client:
+            if ctx.voice_client.channel == target_channel:
+                return await ctx.send("✅ Already in your channel!")
+            # If in a different channel, disconnect first and wait
+            await ctx.voice_client.disconnect(force=True)
+            await asyncio.sleep(0.5)  # Give Discord time to process
+        
+        # Now join
+        await target_channel.connect()
         await self.update_vc_status("☕ Chilling...")
         await ctx.send("✅ Joined!")
 
