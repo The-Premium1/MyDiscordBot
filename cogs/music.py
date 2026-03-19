@@ -289,7 +289,14 @@ class Music(commands.Cog):
 
             try:
                 print(f"ðŸŽµ Creating PCM audio source for: {m.current['title']}")
-                source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
+                print(f"ðŸŽµ Using FFmpeg: {FFMPEG_EXE or 'system default'}")
+                print(f"ðŸŽµ FFMPEG_OPTIONS: {self.FFMPEG_OPTIONS}")
+                
+                # Create audio source with FFmpeg
+                source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
+                    m.current['url'], 
+                    **self.FFMPEG_OPTIONS
+                ))
                 source.volume = m.volume
                 
                 # Use guild_id in callback with error handling
@@ -298,6 +305,7 @@ class Music(commands.Cog):
                     if error:
                         print(f"âŒ Playback error: {error}")
                     self.play_next(guild_id)
+                
                 voice_client.play(source, after=playback_finished)
                 print(f"âœ… Playback started for {m.current['title']}")
                 
@@ -589,6 +597,30 @@ class Music(commands.Cog):
             embed.add_field(name="Version", value="Unable to detect", inline=False)
         
         await ctx.send(embed=embed)
+
+    @commands.command()
+    async def test(self, ctx: commands.Context):
+        """Test if FFmpeg and voice connection work."""
+        if not ctx.author.voice:
+            return await ctx.send("Join a voice channel first!")
+        
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        if not voice_client:
+            try:
+                voice_client = await ctx.author.voice.channel.connect(timeout=10.0, reconnect=False)
+                await ctx.send("Joined voice channel")
+            except Exception as e:
+                return await ctx.send(f"Can't join voice: {str(e)[:80]}")
+        
+        # Test FFmpeg
+        await ctx.send(f"FFmpeg path: `{FFMPEG_EXE or 'system default'}`")
+        await ctx.send(f"FFMPEG_OPTIONS: ```{self.FFMPEG_OPTIONS}```")
+        
+        # Test if voice client can play
+        if voice_client.is_connected():
+            await ctx.send("Voice connection: OK")
+        else:
+            await ctx.send("Voice connection: FAILED")
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
