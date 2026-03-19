@@ -340,7 +340,7 @@ class Music(commands.Cog):
     async def play(self, ctx: commands.Context, *, search: str):
         """Plays a song from YouTube."""
         if not ctx.author.voice:
-            return await ctx.send("âŒ Join a voice channel first!")
+            return await ctx.send("Join a voice channel first!")
         
         # Get or create voice client for this guild
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
@@ -379,7 +379,7 @@ class Music(commands.Cog):
                     else:
                         error_msg = str(e) if str(e) else "Unable to join voice channel"
                         print(f"Play join error: {error_msg}")
-                        return await ctx.send(f"âŒ Can't join: {error_msg[:100]}")
+                        return await ctx.send(f"Can't join: {error_msg[:100]}")
 
         async with ctx.typing():
             try:
@@ -390,7 +390,7 @@ class Music(commands.Cog):
                         info = info['entries'][0]
 
                     self.manager.queue.append(info)
-                    await ctx.send(f"âœ… Added to queue: **{info['title']}**")
+                    await ctx.send(f"Added to queue: **{info['title']}**")
 
                     # Always try to play if queue has songs and no music is playing
                     voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
@@ -401,36 +401,36 @@ class Music(commands.Cog):
                             self.play_next(ctx.guild.id)
                         else:
                             print(f"ðŸŽµ Music already playing, queued for later")
-                            await ctx.send("â³ Added to queue, will play next!")
+                            await ctx.send("Added to queue, will play next!")
                     else:
                         print(f"âŒ Voice client not connected after adding to queue")
                         
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
-                    await ctx.send("âŒ YouTube is blocking this request. Try a different song or source.")
+                    await ctx.send("YouTube is blocking this request. Try a different song or source.")
                 else:
-                    await ctx.send(f"âŒ YouTube error: {str(e)[:100]}")
+                    await ctx.send(f"YouTube error: {str(e)[:100]}")
             except Exception as e:
                 error_str = str(e).lower()
                 print(f"Play error: {str(e)}")
                 if "ffmpeg" in error_str or ".exe" in error_str:
-                    await ctx.send("âŒ Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
+                    await ctx.send("Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
                 elif "not found" in error_str:
-                    await ctx.send("âŒ Song not found. Try a different search term.")
+                    await ctx.send("Song not found. Try a different search term.")
                 else:
-                    await ctx.send(f"âŒ Error: {str(e)[:100]}")
+                    await ctx.send(f"Error: {str(e)[:100]}")
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx: commands.Context):
         """Displays the next 10 songs in the queue."""
         if not self.manager.queue:
-            return await ctx.send("The queue is currently empty! â˜•")
+            return await ctx.send("The queue is currently empty!")
 
         description = ""
         for i, song in enumerate(self.manager.queue[:10], 1):
             description += f"**{i}.** {song['title']}\n"
 
-        embed = discord.Embed(title="ðŸŽ¶ Current Queue", description=description, color=discord.Color.blue())
+        embed = discord.Embed(title="Current Queue", description=description, color=discord.Color.blue())
         await ctx.send(embed=embed)
 
     @commands.command(aliases=['s'])
@@ -438,7 +438,7 @@ class Music(commands.Cog):
         if not await self.check_voice_channels(ctx):
             return
         ctx.voice_client.stop()
-        await ctx.send("â­ï¸ Skipped!")
+        await ctx.send("Skipped!")
 
     @commands.command()
     async def pause(self, ctx: commands.Context):
@@ -446,8 +446,8 @@ class Music(commands.Cog):
             return
         if ctx.voice_client.is_playing():
             ctx.voice_client.pause()
-            await self.update_vc_status("â˜• Chilling...")
-            await ctx.send("â¸ï¸ Paused.")
+            await self.update_vc_status("Paused")
+            await ctx.send("Paused.")
 
     @commands.command()
     async def resume(self, ctx: commands.Context):
@@ -456,8 +456,8 @@ class Music(commands.Cog):
         if ctx.voice_client.is_paused():
             ctx.voice_client.resume()
             if self.manager.current:
-                await self.update_vc_status(f"ðŸ”Š Playing now: {self.manager.current['title']}")
-            await ctx.send("â–¶ï¸ Resumed.")
+                await self.update_vc_status(f"Playing: {self.manager.current['title']}")
+            await ctx.send("Resumed.")
 
     @commands.command(aliases=['leave', 'disconnect'])
     async def stop(self, ctx: commands.Context):
@@ -466,7 +466,7 @@ class Music(commands.Cog):
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         
         if not voice_client:
-            return await ctx.send("âŒ I'm not in a voice channel!")
+            return await ctx.send("I'm not in a voice channel!")
         
         # Clear queue and stop music
         self.manager.queue.clear()
@@ -488,13 +488,13 @@ class Music(commands.Cog):
         self.manager.volume = vol / 100
         if ctx.voice_client.source:
             ctx.voice_client.source.volume = self.manager.volume
-        await ctx.send(f"ðŸ”Š Volume set to {vol}%")
+        await ctx.send(f"Volume set to {vol}%")
 
     @commands.command()
     async def join(self, ctx: commands.Context):
         """Join the voice channel."""
         if not ctx.author.voice:
-            return await ctx.send("âŒ Join a VC first!")
+            return await ctx.send("Join a VC first!")
         
         target_channel = ctx.author.voice.channel
         
@@ -502,7 +502,7 @@ class Music(commands.Cog):
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if voice_client and voice_client.is_connected():
             if voice_client.channel == target_channel:
-                return await ctx.send("âœ… Already in your channel!")
+                return await ctx.send("Already in your channel!")
             else:
                 # In different channel - disconnect first before joining new one
                 print(f"ðŸŽ¤ Bot in {voice_client.channel.name}, moving to {target_channel.name}...")
@@ -534,11 +534,11 @@ class Music(commands.Cog):
             await ctx.send("Joined!")
             
         except asyncio.TimeoutError:
-            await ctx.send("âŒ Connection timed out. Try again!")
+            await ctx.send("Connection timed out. Try again!")
             print(f"âŒ Join timeout for {target_channel.name}")
         except Exception as e:
             error_msg = str(e)[:80]
-            await ctx.send(f"âŒ Can't join: {error_msg}")
+            await ctx.send(f"Can't join: {error_msg}")
             print(f"âŒ Join error: {error_msg}")
 
     @commands.command(aliases=['c'])
