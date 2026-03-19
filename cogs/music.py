@@ -637,20 +637,6 @@ class Music(commands.Cog):
             return await ctx.send("No song is currently playing!")
         await self.send_now_playing(ctx)
 
-    @commands.command()
-    async def ffmpegtest(self, ctx: commands.Context):
-        """DEBUG: Check FFmpeg status on the server."""
-        import shutil
-        ffmpeg_path = shutil.which('ffmpeg')
-        
-        status = f"""
-ðŸŽµ **FFmpeg Debug Info:**
-- Detected path: `{FFMPEG_EXE or 'Not found'}`
-- In PATH: `{ffmpeg_path or 'Not found'}`
-- FFMPEG_OPTIONS: `{self.FFMPEG_OPTIONS}`
-- Bot voice clients: `{len(self.bot.voice_clients)}`
-        """
-        await ctx.send(status)
 
 
 async def setup(bot: commands.Bot):
