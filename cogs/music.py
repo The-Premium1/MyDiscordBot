@@ -235,6 +235,12 @@ class Music(commands.Cog):
             m.current = None
             return
         
+        # CRITICAL: Check if voice client is actually connected before playing
+        if not voice_client.is_connected():
+            print(f"❌ Voice client exists but NOT CONNECTED for guild {guild_id}")
+            m.current = None
+            return
+        
         print(f"🎵 play_next called: voice_client={voice_client}, queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
         
         # Cleanup previous source
@@ -243,7 +249,6 @@ class Music(commands.Cog):
                 voice_client.source.cleanup()
             except Exception as e:
                 print(f"⚠️ Source cleanup error: {e}")
-                pass
 
         # 1. Handle Loop Modes
         if m.current:
@@ -328,7 +333,11 @@ class Music(commands.Cog):
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if not voice_client:
             try:
-                voice_client = await ctx.author.voice.channel.connect()
+                print(f"🎤 Attempting to join VC for play command...")
+                voice_client = await ctx.author.voice.channel.connect(timeout=30.0, reconnect=True)
+                await asyncio.sleep(0.5)
+                if not voice_client.is_connected():
+                    raise Exception("Voice client not connected after join")
             except Exception as e:
                 error_msg = str(e) if str(e) else "Unable to join voice channel"
                 print(f"Play join error: {error_msg}")
@@ -345,8 +354,15 @@ class Music(commands.Cog):
                     self.manager.queue.append(info)
                     await ctx.send(f"✅ Added to queue: **{info['title']}**")
 
-                    if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
+                    # Double-check voice client is still connected before playing
+                    if voice_client and voice_client.is_connected() and not voice_client.is_playing() and not voice_client.is_paused():
+                        print(f"🎵 Starting playback (queue has {len(self.manager.queue)} songs)")
                         self.play_next(ctx.guild.id)
+                    else:
+                        status = "playing" if voice_client.is_playing() else "paused" if voice_client.is_paused() else "disconnected"
+                        print(f"⚠️ Voice client status: {status}, not starting playback")
+                        await ctx.send("⏸️ Music will start when current song finishes or you use !resume")
+                        
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
                     await ctx.send("❌ YouTube is blocking this request. Try a different song or source.")
@@ -434,7 +450,7 @@ class Music(commands.Cog):
 
     @commands.command()
     async def join(self, ctx: commands.Context):
-        """Join the voice channel."""
+        """Join the voice channel with retry logic."""
         if not ctx.author.voice:
             return await ctx.send("❌ Join a VC first!")
         
@@ -451,19 +467,40 @@ class Music(commands.Cog):
             # If in different channel, disconnect first
             try:
                 await voice_client.disconnect(force=True)
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(1.5)
             except Exception as e:
                 print(f"Error disconnecting: {e}")
         
-        # Now join
-        try:
-            await target_channel.connect()
-            await self.update_vc_status("☕ Chilling...")
-            await ctx.send("✅ Joined!")
-        except Exception as e:
-            error_msg = str(e) if str(e) else "Unknown error"
-            print(f"Join error: {error_msg}")
-            await ctx.send(f"❌ Can't join: {error_msg[:100]}")
+        # Try to join with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"🎤 Joining VC (attempt {attempt + 1}/{max_retries})...")
+                voice_client = await target_channel.connect(timeout=30.0, reconnect=True)
+                
+                # Verify connection is actually established
+                await asyncio.sleep(0.5)
+                if not voice_client.is_connected():
+                    raise Exception("Voice client created but not connected")
+                
+                print(f"✅ Successfully joined {target_channel.name}")
+                await self.update_vc_status("☕ Chilling...")
+                await ctx.send("✅ Joined!")
+                return
+                
+            except Exception as e:
+                error_msg = str(e) if str(e) else "Unknown error"
+                print(f"❌ Join attempt {attempt + 1} failed: {error_msg}")
+                
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 1s, 2s, then give up
+                    wait_time = 2 ** attempt
+                    print(f"⏳ Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    # Final attempt failed
+                    await ctx.send(f"❌ Can't join after {max_retries} attempts: {error_msg[:100]}")
+                    print(f"❌ Failed to join {target_channel.name} after {max_retries} retries")
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
