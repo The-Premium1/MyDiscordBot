@@ -102,22 +102,44 @@ class Music(commands.Cog):
             return await ctx.send("🎧 You're not in a voice channel!")
         
         channel = ctx.author.voice.channel
+        
+        # If already in a channel
         if ctx.voice_client:
             if ctx.voice_client.channel == channel:
                 return await ctx.send(f"✅ Already in {channel.mention}!")
-            await ctx.voice_client.move_to(channel)
-            await ctx.send(f"🔀 Moved to {channel.mention}!")
-        else:
-            vc = await channel.connect()
-            await ctx.send(f"✅ Joined {channel.mention}!")
-            await asyncio.sleep(3)
+            # Move to new channel
+            try:
+                await ctx.voice_client.move_to(channel)
+                await asyncio.sleep(2)  # Wait for connection to stabilize
+                await ctx.send(f"🔀 Moved to {channel.mention}!")
+                return
+            except Exception as e:
+                return await ctx.send(f"❌ Failed to move: {str(e)}")
+        
+        # Connect to new channel
+        try:
+            vc = await channel.connect(timeout=10.0)
+            await asyncio.sleep(3)  # Give voice connection time to stabilize
+            
+            # Verify connection actually worked
+            if vc and vc.is_connected():
+                await ctx.send(f"✅ Joined {channel.mention}!")
+            else:
+                await ctx.send(f"⚠️ Connection may be unstable - check `!vc_status`")
+        except asyncio.TimeoutError:
+            await ctx.send("❌ Connection timeout - Discord server may be slow")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to join: {str(e)}")
 
-    @commands.command(aliases=['l'])
+    @commands.command(aliases=['l', 'disconnect', 'dc'])
     async def leave(self, ctx: commands.Context):
         """Leave the voice channel."""
         if ctx.voice_client:
-            await ctx.voice_client.disconnect()
-            await ctx.send("👋 Left voice channel!")
+            try:
+                await ctx.voice_client.disconnect(force=True)
+                await ctx.send("👋 Left voice channel!")
+            except Exception as e:
+                await ctx.send(f"⚠️ Disconnect issue: {str(e)}")
         else:
             await ctx.send("❌ Not in a voice channel!")
 
@@ -127,12 +149,21 @@ class Music(commands.Cog):
         if not query:
             return await ctx.send("❌ Please provide a song name!")
         
+        # Ensure bot is in voice
         if not ctx.voice_client:
             if not ctx.author.voice:
                 return await ctx.send("🎧 Join a voice channel first!")
-            vc = await ctx.author.voice.channel.connect()
-        else:
-            vc = ctx.voice_client
+            try:
+                await ctx.author.voice.channel.connect(timeout=10.0)
+                await asyncio.sleep(2)  # Wait for connection to stabilize
+            except Exception as e:
+                return await ctx.send(f"❌ Failed to join voice: {str(e)}")
+        
+        vc = ctx.voice_client
+        
+        # Check if connection is actually ready
+        if not vc or not vc.is_connected():
+            return await ctx.send("❌ Not properly connected to voice!")
         
         await ctx.send(f"🔍 Searching for: {query}")
         
