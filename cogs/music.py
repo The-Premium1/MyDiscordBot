@@ -3,6 +3,7 @@ import time
 import random
 import asyncio
 import logging
+import subprocess
 
 import discord
 from discord.ext import commands
@@ -10,19 +11,32 @@ import yt_dlp
 
 logging.basicConfig(level=logging.INFO)
 
-# FFmpeg path - use system ffmpeg on Linux (Railway), fallback to local exe on Windows
+# FFmpeg detection - Railway runs on Linux, check system paths first
 FFMPEG_EXE = None
-if os.path.exists('/usr/bin/ffmpeg'):  # Linux/Railway
-    FFMPEG_EXE = '/usr/bin/ffmpeg'
-elif os.path.exists('/usr/local/bin/ffmpeg'):  # Alternative Linux path
-    FFMPEG_EXE = '/usr/local/bin/ffmpeg'
-elif os.path.exists('ffmpeg'):  # Check if ffmpeg is in PATH
-    FFMPEG_EXE = 'ffmpeg'
-else:
-    # Try local path for Windows dev
+
+# Try common Linux paths first
+for path in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']:
+    if os.path.exists(path):
+        FFMPEG_EXE = path
+        break
+
+# If not found, try which command (Unix-like systems)
+if not FFMPEG_EXE:
+    try:
+        result = subprocess.run(['which', 'ffmpeg'], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            FFMPEG_EXE = result.stdout.strip()
+    except Exception:
+        pass
+
+# Last resort: Windows fallback for local dev
+if not FFMPEG_EXE:
     local_path = os.path.join(os.path.dirname(__file__), '..', 'ffmpeg.exe')
     if os.path.exists(local_path):
         FFMPEG_EXE = local_path
+
+# Log what we found
+print(f"🎵 FFmpeg Detection: {FFMPEG_EXE if FFMPEG_EXE else 'NOT FOUND (will use system default)'}")
 
 
 class MusicManager:
@@ -42,7 +56,7 @@ class Music(commands.Cog):
         self.manager = MusicManager()
         self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True, 'no-warnings': True}
         
-        # Build FFMPEG options - make executable optional if not found
+        # Build FFMPEG options - only set executable if explicitly found
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn -b:a 128k'
@@ -50,7 +64,7 @@ class Music(commands.Cog):
         if FFMPEG_EXE:
             self.FFMPEG_OPTIONS['executable'] = FFMPEG_EXE
         
-        print(f"🎵 FFmpeg path: {FFMPEG_EXE if FFMPEG_EXE else 'Using system ffmpeg'}")
+        print(f"🎵 Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
 
     async def check_voice_channels(self, ctx: commands.Context) -> bool:
         if not ctx.voice_client:
@@ -221,7 +235,7 @@ class Music(commands.Cog):
                 m.queue.append(m.current)
 
         # 2. Play next song
-        if len(m.queue) > 0:
+        if len(m.queue) > 0 and ctx.voice_client:
             m.current = m.queue.pop(0)
             m.start_time = time.time()
 
@@ -234,13 +248,14 @@ class Music(commands.Cog):
                 ctx.voice_client.play(source, after=lambda e: self.play_next(ctx))
                 asyncio.run_coroutine_threadsafe(self.send_now_playing(ctx), self.bot.loop)
             except Exception as e:
-                print(f"❌ FFmpeg Error: {str(e)}")
+                print(f"❌ Play Error: {str(e)}")
                 asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
                 # Skip to next song on error
                 self.play_next(ctx)
         else:
             m.current = None
-            asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+            if ctx and ctx.voice_client:
+                asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
         m = self.manager
@@ -259,6 +274,16 @@ class Music(commands.Cog):
     async def on_ready(self):
         print(f'🎵 Music cog loaded!')
         self.bot.loop.create_task(self.idle_check())
+    
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """Handle voice state changes - clean up if bot disconnected"""
+        if member == self.bot.user:
+            if before.channel and not after.channel:
+                # Bot was disconnected
+                self.manager.queue.clear()
+                self.manager.current = None
+                print("🎵 Bot disconnected from voice channel")
 
     async def idle_check(self):
         idle_times = {}
@@ -280,7 +305,10 @@ class Music(commands.Cog):
         if not ctx.author.voice:
             return await ctx.send("❌ Join a voice channel first!")
         if not ctx.voice_client:
-            await ctx.author.voice.channel.connect()
+            try:
+                await ctx.author.voice.channel.connect()
+            except Exception as e:
+                return await ctx.send(f"❌ Can't join channel: {str(e)[:50]}")
 
         async with ctx.typing():
             try:
@@ -293,7 +321,7 @@ class Music(commands.Cog):
                     self.manager.queue.append(info)
                     await ctx.send(f"✅ Added to queue: **{info['title']}**", delete_after=10)
 
-                    if not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
+                    if ctx.voice_client and not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
                         self.play_next(ctx)
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
@@ -302,8 +330,8 @@ class Music(commands.Cog):
                     await ctx.send(f"❌ YouTube error: {str(e)[:100]}")
             except Exception as e:
                 error_str = str(e).lower()
-                if "ffmpeg" in error_str:
-                    await ctx.send("❌ Audio system error. Make sure FFmpeg is installed. Try again in a moment.")
+                if "ffmpeg" in error_str or ".exe" in error_str:
+                    await ctx.send("❌ Audio system not ready. Try again in a moment.")
                 elif "not found" in error_str:
                     await ctx.send("❌ Song not found. Try a different search term.")
                 else:
@@ -384,18 +412,25 @@ class Music(commands.Cog):
         
         target_channel = ctx.author.voice.channel
         
-        # Check if bot is already in the same channel
+        # If bot is already in a voice channel
         if ctx.voice_client:
-            if ctx.voice_client.channel == target_channel:
-                return await ctx.send("✅ Already in your channel!")
-            # If in a different channel, disconnect first and wait
-            await ctx.voice_client.disconnect(force=True)
-            await asyncio.sleep(0.5)  # Give Discord time to process
+            try:
+                # If already in the same channel, do nothing
+                if ctx.voice_client.channel == target_channel:
+                    return await ctx.send("✅ Already in your channel!")
+                # If in different channel, disconnect first
+                await ctx.voice_client.disconnect(force=True)
+                await asyncio.sleep(1.0)  # Wait for Discord to process disconnect
+            except Exception as e:
+                print(f"Error disconnecting: {e}")
         
         # Now join
-        await target_channel.connect()
-        await self.update_vc_status("☕ Chilling...")
-        await ctx.send("✅ Joined!")
+        try:
+            await target_channel.connect()
+            await self.update_vc_status("☕ Chilling...")
+            await ctx.send("✅ Joined!")
+        except Exception as e:
+            await ctx.send(f"❌ Can't join: {str(e)[:50]}")
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
