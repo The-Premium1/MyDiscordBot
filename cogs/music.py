@@ -11,32 +11,37 @@ import yt_dlp
 
 logging.basicConfig(level=logging.INFO)
 
-# FFmpeg detection - Railway runs on Linux, check system paths first
+# FFmpeg detection - Railway/nixpacks installs to /nix/store
 FFMPEG_EXE = None
 
-# Try common Linux paths first (nixpacks installs to /usr/bin)
-for path in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg', '/nix/store']:
+# First, try common Linux paths
+for path in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']:
     if os.path.exists(path):
-        if path.endswith('ffmpeg'):
-            FFMPEG_EXE = path
-            break
+        FFMPEG_EXE = path
+        break
 
-# If not found, try which command (Unix-like systems)
+# If not found, try 'which' command (Unix-like systems)
 if not FFMPEG_EXE:
     try:
         result = subprocess.run(['which', 'ffmpeg'], capture_output=True, text=True, timeout=2)
-        if result.returncode == 0:
+        if result.returncode == 0 and result.stdout.strip():
             FFMPEG_EXE = result.stdout.strip()
     except Exception:
         pass
 
-# Last resort: search in nix store (nixpacks puts it here)
+# Last resort: search /nix/store for ffmpeg (nixpacks location)
 if not FFMPEG_EXE:
     try:
-        result = subprocess.run(['find', '/nix', '-name', 'ffmpeg', '-type', 'f', '-executable'], 
-                              capture_output=True, text=True, timeout=5)
-        if result.returncode == 0 and result.stdout.strip():
-            FFMPEG_EXE = result.stdout.strip().split('\n')[0]
+        # Use ls to find ffmpeg in nix store - faster than find
+        result = subprocess.run(['ls', '-la', '/nix/store/'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # Look for ffmpeg directories in nix store
+            for line in result.stdout.split('\n'):
+                if 'ffmpeg' in line.lower():
+                    nix_path = f"/nix/store/{line.split()[-1]}/bin/ffmpeg"
+                    if os.path.exists(nix_path):
+                        FFMPEG_EXE = nix_path
+                        break
     except Exception:
         pass
 
@@ -46,11 +51,11 @@ if not FFMPEG_EXE:
     if os.path.exists(local_path):
         FFMPEG_EXE = local_path
 
-# If still not found, assume it's in PATH and will work
+# Log result
 if FFMPEG_EXE:
     print(f"ðŸŽµ FFmpeg Detection: FOUND at {FFMPEG_EXE}")
 else:
-    print(f"ðŸŽµ FFmpeg Detection: NOT FOUND - will use system PATH")
+    print(f"ðŸŽµ FFmpeg Detection: NOT FOUND - will attempt system default")
 
 # DEBUG: Check if ffmpeg exists in common locations
 import shutil
