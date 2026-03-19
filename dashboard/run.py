@@ -1,28 +1,46 @@
 #!/usr/bin/env python3
 """
-Simple wrapper to run Flask app with proper PORT handling
+Flask app runner that handles PORT correctly
 """
 import os
 import sys
+import logging
 
-# Force PORT to be set
-port = os.environ.get('PORT', '5000')
-if not port or port == '$PORT':  # Handle case where shell didn't expand
-    port = '5000'
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-print(f"🚀 Starting Flask app on port {port}")
+# Get PORT from environment - try multiple ways
+port_str = None
 
-# Set environment variable explicitly
-os.environ['PORT'] = port
+# Method 1: Direct environment variable
+if 'PORT' in os.environ:
+    port_str = os.environ['PORT']
+    logger.info(f"PORT from environ: {port_str}")
 
-# Import and run the app
+# Method 2: If PORT is literally "$PORT", replace it
+if not port_str or port_str == '$PORT':
+    logger.warning("PORT not set or literal '$PORT', using default 5000")
+    port_str = '5000'
+
+# Convert to integer
+try:
+    port = int(port_str)
+    logger.info(f"✅ Using port: {port}")
+except (ValueError, TypeError) as e:
+    logger.error(f"❌ Invalid port: {port_str}, error: {e}")
+    port = 5000
+    logger.info(f"✅ Fallback to port: {port}")
+
+# Import app AFTER setting environment
+os.environ['PORT'] = str(port)
+
 from app import app
 
 if __name__ == '__main__':
+    logger.info(f"🚀 Starting Flask app on 0.0.0.0:{port}")
     try:
-        port_int = int(port)
-    except ValueError:
-        print(f"❌ Invalid PORT: {port}, using 5000")
-        port_int = 5000
-    
-    app.run(host='0.0.0.0', port=port_int, debug=False)
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    except Exception as e:
+        logger.error(f"❌ Failed to start app: {e}")
+        sys.exit(1)
+
