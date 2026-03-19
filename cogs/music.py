@@ -316,7 +316,9 @@ class Music(commands.Cog):
             try:
                 voice_client = await ctx.author.voice.channel.connect()
             except Exception as e:
-                return await ctx.send(f"❌ Can't join channel: {str(e)[:50]}")
+                error_msg = str(e) if str(e) else "Unable to join voice channel"
+                print(f"Play join error: {error_msg}")
+                return await ctx.send(f"❌ Can't join: {error_msg[:100]}")
 
         async with ctx.typing():
             try:
@@ -338,8 +340,9 @@ class Music(commands.Cog):
                     await ctx.send(f"❌ YouTube error: {str(e)[:100]}")
             except Exception as e:
                 error_str = str(e).lower()
+                print(f"Play error: {str(e)}")
                 if "ffmpeg" in error_str or ".exe" in error_str:
-                    await ctx.send("❌ Audio system not ready. Try again in a moment.")
+                    await ctx.send("❌ Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
                 elif "not found" in error_str:
                     await ctx.send("❌ Song not found. Try a different search term.")
                 else:
@@ -444,8 +447,9 @@ class Music(commands.Cog):
             await self.update_vc_status("☕ Chilling...")
             await ctx.send("✅ Joined!")
         except Exception as e:
-            print(f"Join error: {e}")
-            await ctx.send(f"❌ Can't join: {str(e)[:50]}")
+            error_msg = str(e) if str(e) else "Unknown error"
+            print(f"Join error: {error_msg}")
+            await ctx.send(f"❌ Can't join: {error_msg[:100]}")
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
