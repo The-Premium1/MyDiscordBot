@@ -382,17 +382,26 @@ class Music(commands.Cog):
                     break  # Success, exit retry loop
                 except Exception as e:
                     print(f"âŒ Attempt {attempt + 1} failed: {str(e)}")
+                    error_str = str(e).lower()
+                    
+                    # 4006 error (Resume Invalid) doesn't always prevent joining - check if actually connected
+                    if "4006" in error_str or "websocket closed" in error_str:
+                        await asyncio.sleep(2.0)  # Wait a bit for connection to stabilize
+                        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+                        if voice_client and voice_client.is_connected():
+                            print(f"âœ… Voice connection established despite 4006 error")
+                            break  # Connection is fine, continue
+                    
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1.0)
                     else:
-                        # Bot may have already joined despite error, so don't show error
-                        # The 4006 error is a Discord gateway issue that doesn't always prevent joining
+                        # Final check: are we actually connected?
                         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
                         if voice_client and voice_client.is_connected():
-                            print(f"Voice client connected despite error")
+                            print(f"âœ… Voice client connected despite error, continuing...")
                             break
                         error_msg = str(e) if str(e) else "Unable to join voice channel"
-                        print(f"Play join error: {error_msg}")
+                        print(f"âŒ Play join error: {error_msg}")
                         return await ctx.send(f"Can't join: {error_msg[:100]}")
 
         async with ctx.typing():
