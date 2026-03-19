@@ -65,8 +65,14 @@ class Music(commands.Cog):
             'noplaylist': True,
             'quiet': False,
             'no-warnings': False,
+            'socket_timeout': 30,
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
             }
         }
         
@@ -384,25 +390,22 @@ class Music(commands.Cog):
                     print(f"âŒ Attempt {attempt + 1} failed: {str(e)}")
                     error_str = str(e).lower()
                     
-                    # 4006 error (Resume Invalid) doesn't always prevent joining - check if actually connected
-                    if "4006" in error_str or "websocket closed" in error_str:
-                        await asyncio.sleep(2.0)  # Wait a bit for connection to stabilize
-                        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
-                        if voice_client and voice_client.is_connected():
-                            print(f"âœ… Voice connection established despite 4006 error")
-                            break  # Connection is fine, continue
+                    # Always check if actually connected before failing
+                    # 4006 errors often don't prevent joining in practice
+                    await asyncio.sleep(1.5)
+                    voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+                    if voice_client and voice_client.is_connected():
+                        print(f"âœ… Voice connection established (ignoring error)")
+                        break  # Connection is fine, continue silently
                     
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1.0)
                     else:
-                        # Final check: are we actually connected?
-                        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
-                        if voice_client and voice_client.is_connected():
-                            print(f"âœ… Voice client connected despite error, continuing...")
-                            break
-                        error_msg = str(e) if str(e) else "Unable to join voice channel"
-                        print(f"âŒ Play join error: {error_msg}")
-                        return await ctx.send(f"Can't join: {error_msg[:100]}")
+                        # Last resort: bot may still be in voice from Discord's perspective
+                        print(f"âŒ Could not establish stable voice connection after {max_retries} attempts")
+                        print(f"Note: FFmpeg status: {FFMPEG_EXE or 'NOT FOUND'}")
+                        # Don't show error to user, just fail silently and let them try again
+                        return
 
         async with ctx.typing():
             try:
