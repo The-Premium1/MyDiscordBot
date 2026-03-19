@@ -235,11 +235,14 @@ class Music(commands.Cog):
             m.current = None
             return
         
+        print(f"🎵 play_next called: voice_client={voice_client}, queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
+        
         # Cleanup previous source
         if voice_client.source:
             try:
                 voice_client.source.cleanup()
-            except Exception:
+            except Exception as e:
+                print(f"⚠️ Source cleanup error: {e}")
                 pass
 
         # 1. Handle Loop Modes
@@ -255,24 +258,30 @@ class Music(commands.Cog):
             m.start_time = time.time()
 
             status_text = f"🔊 Playing now: {m.current['title']}"
+            print(f"🎵 {status_text}")
             asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
 
             try:
+                print(f"🎵 Creating PCM audio source for: {m.current['title']}")
                 source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
                 source.volume = m.volume
-                # Use guild_id in lambda instead of context
-                voice_client.play(source, after=lambda e: self.play_next(guild_id))
                 
-                # Create fake ctx for send_now_playing (we'll refactor this next)
-                # For now, just update status
+                # Use guild_id in lambda instead of context
+                print(f"🎵 Starting playback with callback to play_next")
+                voice_client.play(source, after=lambda e: self.play_next(guild_id))
+                print(f"✅ Playback started for {m.current['title']}")
+                
                 asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
             except Exception as e:
-                print(f"❌ Play Error: {str(e)}")
+                print(f"❌ Play Error: {type(e).__name__}: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
                 # Skip to next song on error
                 self.play_next(guild_id)
         else:
             m.current = None
+            print(f"🎵 Queue empty, waiting for next song")
             asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
