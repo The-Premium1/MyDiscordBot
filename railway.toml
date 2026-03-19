@@ -1,5 +1,8 @@
 [build]
-builder = "dockerfile"
+builder = "nixpacks"
 
-[deploy]
-startCommand = "python main.py"
+[build.nixpacks]
+providers = ["python"]
+
+[[build.nixpacks.packages]]
+nix = ["ffmpeg", "libopus", "libsodium"]
