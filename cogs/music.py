@@ -241,14 +241,14 @@ class Music(commands.Cog):
             m.current = None
             return
         
-        print(f"🎵 play_next called: voice_client={voice_client}, queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
+        print(f"🎵 play_next called: queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
         
-        # Cleanup previous source
-        if voice_client.source:
-            try:
+        # Cleanup previous source if still exists
+        try:
+            if hasattr(voice_client, 'source') and voice_client.source:
                 voice_client.source.cleanup()
-            except Exception as e:
-                print(f"⚠️ Source cleanup error: {e}")
+        except Exception as e:
+            print(f"⚠️ Source cleanup error: {e}")
 
         # 1. Handle Loop Modes
         if m.current:
@@ -256,6 +256,7 @@ class Music(commands.Cog):
                 m.queue.insert(0, m.current)
             elif m.loop_mode == 2:
                 m.queue.append(m.current)
+            m.current = None  # Clear current so we don't loop the same song twice
 
         # 2. Play next song
         if len(m.queue) > 0:
@@ -282,8 +283,10 @@ class Music(commands.Cog):
                 import traceback
                 traceback.print_exc()
                 asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+                m.current = None
                 # Skip to next song on error
-                self.play_next(guild_id)
+                if len(m.queue) > 0:
+                    self.play_next(guild_id)
         else:
             m.current = None
             print(f"🎵 Queue empty, waiting for next song")
@@ -335,7 +338,7 @@ class Music(commands.Cog):
             try:
                 print(f"🎤 Attempting to join VC for play command...")
                 voice_client = await ctx.author.voice.channel.connect(timeout=30.0, reconnect=True)
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)  # Wait longer for stable connection
                 if not voice_client.is_connected():
                     raise Exception("Voice client not connected after join")
             except Exception as e:
@@ -354,14 +357,18 @@ class Music(commands.Cog):
                     self.manager.queue.append(info)
                     await ctx.send(f"✅ Added to queue: **{info['title']}**")
 
-                    # Double-check voice client is still connected before playing
-                    if voice_client and voice_client.is_connected() and not voice_client.is_playing() and not voice_client.is_paused():
-                        print(f"🎵 Starting playback (queue has {len(self.manager.queue)} songs)")
-                        self.play_next(ctx.guild.id)
+                    # Always try to play if queue has songs and no music is playing
+                    voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+                    if voice_client and voice_client.is_connected():
+                        # If nothing is currently playing, start immediately
+                        if not voice_client.is_playing():
+                            print(f"🎵 Starting playback (queue has {len(self.manager.queue)} songs)")
+                            self.play_next(ctx.guild.id)
+                        else:
+                            print(f"🎵 Music already playing, queued for later")
+                            await ctx.send("⏳ Added to queue, will play next!")
                     else:
-                        status = "playing" if voice_client.is_playing() else "paused" if voice_client.is_paused() else "disconnected"
-                        print(f"⚠️ Voice client status: {status}, not starting playback")
-                        await ctx.send("⏸️ Music will start when current song finishes or you use !resume")
+                        print(f"❌ Voice client not connected after adding to queue")
                         
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
@@ -373,6 +380,10 @@ class Music(commands.Cog):
                 print(f"Play error: {str(e)}")
                 if "ffmpeg" in error_str or ".exe" in error_str:
                     await ctx.send("❌ Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
+                elif "not found" in error_str:
+                    await ctx.send("❌ Song not found. Try a different search term.")
+                else:
+                    await ctx.send(f"❌ Error: {str(e)[:100]}")
                 elif "not found" in error_str:
                     await ctx.send("❌ Song not found. Try a different search term.")
                 else:
