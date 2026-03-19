@@ -384,42 +384,52 @@ def api_invite_url():
 
 @app.route('/api/servers')
 def api_servers():
-    """Get list of servers USER manages that bot is in"""
+    """Get list of servers for the logged-in user"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
     user_id = session['user_id']
     print(f"📊 API: Getting servers for user {user_id}")
     
-    # Get ALL servers bot is in
-    all_servers = bot_connector.get_servers()
-    if all_servers is None:
-        all_servers = []
-    print(f"🔍 All servers bot is in: {len(all_servers) if all_servers else 0}")
-    if all_servers:
-        print(f"   Server IDs: {[s.get('id') for s in all_servers]}")
-    
-    # Get user's guilds (from database - guilds they manage)
+    # Get user's guilds from database (saved during OAuth login)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT guild_id, role FROM user_guilds WHERE user_id = ?
     """, (user_id,))
     user_guild_data = cursor.fetchall()
-    user_guild_ids = [str(row[0]) for row in user_guild_data]
     conn.close()
     
-    print(f"📊 User {user_id} has {len(user_guild_ids)} servers in database")
-    if user_guild_ids:
-        print(f"   Guild IDs: {user_guild_ids}")
+    print(f"📊 User has {len(user_guild_data)} servers in database")
     
-    # If no servers in database, that's the issue
-    if not user_guild_ids:
-        print(f"⚠️ User has NO servers in database! Check if OAuth callback saved them properly.")
+    if not user_guild_data:
+        print(f"⚠️ User has NO servers in database!")
         return jsonify([])
     
+    # Get ALL servers bot is in
+    all_servers = bot_connector.get_servers()
+    if all_servers is None:
+        all_servers = []
+    print(f"🔍 Bot knows about {len(all_servers)} servers")
+    
     # Filter: return servers bot is in that user has access to
+    user_guild_ids = [str(row[0]) for row in user_guild_data]
     user_servers = [s for s in all_servers if str(s.get('id')) in user_guild_ids]
+    
+    # If bot doesn't know about a server yet, create a placeholder
+    if len(user_servers) < len(user_guild_data):
+        bot_server_ids = [s.get('id') for s in all_servers]
+        for guild_id, role in user_guild_data:
+            if str(guild_id) not in bot_server_ids:
+                user_servers.append({
+                    'id': str(guild_id),
+                    'name': f'Server {guild_id}',  # Placeholder
+                    'members': 0,
+                    'owner': None,
+                    'icon': None,
+                    'created': None,
+                    'role': role
+                })
     
     print(f"✅ Returning {len(user_servers)} servers for user")
     

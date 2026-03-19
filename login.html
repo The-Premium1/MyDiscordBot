@@ -51,14 +51,23 @@
 
     <script>
         // Load invite URL from API
+        const inviteBtn = document.getElementById('invite-btn');
+        
         fetch('/api/invite-url')
             .then(res => res.json())
             .then(data => {
+                console.log('Invite URL:', data);
                 if (data.invite_url) {
-                    document.getElementById('invite-btn').href = data.invite_url;
+                    inviteBtn.href = data.invite_url;
+                    inviteBtn.style.opacity = '1';
                 }
             })
-            .catch(err => console.error('Failed to load invite URL:', err));
+            .catch(err => {
+                console.error('Failed to load invite URL:', err);
+                // Fallback - at least make the button work
+                inviteBtn.href = 'https://discord.com/oauth2/authorize?client_id=1483478587255296160&scope=bot&permissions=8';
+                inviteBtn.style.opacity = '1';
+            });
     </script>
 </body>
 </html>
