@@ -276,7 +276,10 @@ def callback():
         guilds_resp = requests.get(guilds_url, headers=headers)
         user_guilds = guilds_resp.json() if guilds_resp.ok else []
         
-        # Add guilds where user is admin/owner
+        print(f"📋 Got {len(user_guilds)} guilds from Discord API")
+        
+        # Add ALL guilds where user has any role (not just admin/owner)
+        saved_count = 0
         for guild in user_guilds:
             guild_id = guild.get('id')
             # Check if user is owner (bit 3 = ADMINISTRATOR permission)
@@ -284,13 +287,22 @@ def callback():
             is_admin = (permissions & 8) == 8  # ADMINISTRATOR permission
             is_owner = guild.get('owner', False)
             
-            if is_admin or is_owner:
-                cursor.execute("""
-                    INSERT OR REPLACE INTO user_guilds (user_id, guild_id, role)
-                    VALUES (?, ?, ?)
-                """, (user_id, guild_id, 'owner' if is_owner else 'admin'))
+            # Determine role - even if user is member only, add them with 'member' role
+            if is_owner:
+                role = 'owner'
+            elif is_admin:
+                role = 'admin'
+            else:
+                role = 'member'  # Add all members, not just admins
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO user_guilds (user_id, guild_id, role)
+                VALUES (?, ?, ?)
+            """, (user_id, guild_id, role))
+            saved_count += 1
         
         conn.commit()
+        print(f"✅ Saved {saved_count} guilds to database")
         conn.close()
         
         # SET SESSION - ORDER MATTERS!
@@ -359,28 +371,67 @@ def api_bot_stats():
     return jsonify(stats)
 
 
+@app.route('/api/invite-url')
+def api_invite_url():
+    """Get bot invite URL."""
+    client_id = os.getenv('DISCORD_CLIENT_ID')
+    if not client_id:
+        return jsonify({'error': 'Client ID not configured'}), 500
+    
+    invite_url = f"https://discord.com/oauth2/authorize?client_id={client_id}&scope=bot&permissions=8"
+    return jsonify({'invite_url': invite_url})
+
+
 @app.route('/api/servers')
 def api_servers():
-    """Get list of servers USER manages that bot is in"""
+    """Get list of servers for the logged-in user"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
     
     user_id = session['user_id']
+    print(f"📊 API: Getting servers for user {user_id}")
     
-    # Get ALL servers bot is in
-    all_servers = bot_connector.get_servers()
-    
-    # Get user's guilds (from database - guilds they manage)
+    # Get user's guilds from database (saved during OAuth login)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT guild_id FROM user_guilds WHERE user_id = ?
+        SELECT guild_id, role FROM user_guilds WHERE user_id = ?
     """, (user_id,))
-    user_guild_ids = [str(row[0]) for row in cursor.fetchall()]
+    user_guild_data = cursor.fetchall()
     conn.close()
     
-    # Filter: only return servers bot is in AND user manages
+    print(f"📊 User has {len(user_guild_data)} servers in database")
+    
+    if not user_guild_data:
+        print(f"⚠️ User has NO servers in database!")
+        return jsonify([])
+    
+    # Get ALL servers bot is in
+    all_servers = bot_connector.get_servers()
+    if all_servers is None:
+        all_servers = []
+    print(f"🔍 Bot knows about {len(all_servers)} servers")
+    
+    # Filter: return servers bot is in that user has access to
+    user_guild_ids = [str(row[0]) for row in user_guild_data]
     user_servers = [s for s in all_servers if str(s.get('id')) in user_guild_ids]
+    
+    # If bot doesn't know about a server yet, create a placeholder
+    if len(user_servers) < len(user_guild_data):
+        bot_server_ids = [s.get('id') for s in all_servers]
+        for guild_id, role in user_guild_data:
+            if str(guild_id) not in bot_server_ids:
+                user_servers.append({
+                    'id': str(guild_id),
+                    'name': f'Server {guild_id}',  # Placeholder
+                    'members': 0,
+                    'owner': None,
+                    'icon': None,
+                    'created': None,
+                    'role': role
+                })
+    
+    print(f"✅ Returning {len(user_servers)} servers for user")
     
     return jsonify(user_servers)
 
