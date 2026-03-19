@@ -261,7 +261,6 @@ class Music(commands.Cog):
             return
         
         # Small delay to ensure voice connection is truly ready before playback
-        # This fixes timing issues on distributed servers like Railway
         time.sleep(0.2)
         
         print(f"ðŸŽµ play_next called: queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
@@ -279,7 +278,7 @@ class Music(commands.Cog):
                 m.queue.insert(0, m.current)
             elif m.loop_mode == 2:
                 m.queue.append(m.current)
-            m.current = None  # Clear current so we don't loop the same song twice
+            m.current = None
 
         # 2. Play next song
         if len(m.queue) > 0:
@@ -291,9 +290,9 @@ class Music(commands.Cog):
             asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
 
             try:
-                print(f"ðŸŽµ Creating PCM audio source for: {m.current['title']}")
-                print(f"ðŸŽµ Using FFmpeg: {FFMPEG_EXE or 'system default'}")
-                print(f"ðŸŽµ FFMPEG_OPTIONS: {self.FFMPEG_OPTIONS}")
+                print(f"ðŸŽµ Creating audio source for: {m.current['title']}")
+                print(f"ðŸŽµ FFmpeg path: {FFMPEG_EXE}")
+                print(f"ðŸŽµ URL: {m.current['url'][:80]}...")
                 
                 # Create audio source with FFmpeg
                 source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
@@ -302,11 +301,13 @@ class Music(commands.Cog):
                 ))
                 source.volume = m.volume
                 
-                # Use guild_id in callback with error handling
-                print(f"ðŸŽµ Starting playback with callback to play_next")
+                print(f"ðŸŽµ Audio source created, starting playback...")
+                
                 def playback_finished(error):
                     if error:
                         print(f"âŒ Playback error: {error}")
+                    else:
+                        print(f"âœ… Song finished, playing next...")
                     self.play_next(guild_id)
                 
                 voice_client.play(source, after=playback_finished)
@@ -319,12 +320,11 @@ class Music(commands.Cog):
                 traceback.print_exc()
                 asyncio.run_coroutine_threadsafe(self.update_vc_status("Chilling..."), self.bot.loop)
                 m.current = None
-                # Skip to next song on error
                 if len(m.queue) > 0:
                     self.play_next(guild_id)
         else:
             m.current = None
-            print(f"ðŸŽµ Queue empty, waiting for next song")
+            print(f"ðŸŽµ Queue empty")
             asyncio.run_coroutine_threadsafe(self.update_vc_status("Chilling..."), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
