@@ -83,16 +83,12 @@ class Music(commands.Cog):
 
     async def update_vc_status(self, text: str):
         """Updates the Bot's Activity AND the Voice Channel Status bubble."""
-        # Remove emojis from status text - Discord voice status has encoding issues with them
-        clean_text = text.replace("ðŸ”Š", "").replace("â˜•", "").replace("ðŸŽµ", "").strip()
-        if not clean_text:
-            clean_text = "Chilling..."
-        
+        # Keep text plain to avoid encoding issues
         await self.bot.change_presence(activity=discord.Game(name=text))
         for vc in self.bot.voice_clients:
             try:
                 # Note: The bot MUST have 'Manage Channels' permission for this to work
-                await vc.channel.edit(status=clean_text)
+                await vc.channel.edit(status=text[:128])  # Max 128 chars for status
             except Exception as e:
                 pass
 
@@ -273,7 +269,7 @@ class Music(commands.Cog):
             m.current = m.queue.pop(0)
             m.start_time = time.time()
 
-            status_text = f"ðŸ”Š Playing now: {m.current['title']}"
+            status_text = f"Playing: {m.current['title']}"
             print(f"ðŸŽµ {status_text}")
             asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
 
@@ -296,7 +292,7 @@ class Music(commands.Cog):
                 print(f"âŒ Play Error: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                asyncio.run_coroutine_threadsafe(self.update_vc_status("â˜• Chilling..."), self.bot.loop)
+                asyncio.run_coroutine_threadsafe(self.update_vc_status("Chilling..."), self.bot.loop)
                 m.current = None
                 # Skip to next song on error
                 if len(m.queue) > 0:
@@ -304,7 +300,7 @@ class Music(commands.Cog):
         else:
             m.current = None
             print(f"ðŸŽµ Queue empty, waiting for next song")
-            asyncio.run_coroutine_threadsafe(self.update_vc_status("â˜• Chilling..."), self.bot.loop)
+            asyncio.run_coroutine_threadsafe(self.update_vc_status("Chilling..."), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
         m = self.manager
@@ -482,7 +478,7 @@ class Music(commands.Cog):
         # Disconnect
         await voice_client.disconnect(force=True)
         await self.update_vc_status("â˜• Chilling...")
-        await ctx.send("ðŸ‘‹ Disconnected.")
+        await ctx.send("Disconnected.")
 
     @commands.command(aliases=['v', 'vol'])
     async def volume(self, ctx: commands.Context, vol: int):
@@ -535,7 +531,7 @@ class Music(commands.Cog):
             
             print(f"âœ… Joined {target_channel.name}")
             await self.update_vc_status("â˜• Chilling...")
-            await ctx.send("âœ… Joined!")
+            await ctx.send("Joined!")
             
         except asyncio.TimeoutError:
             await ctx.send("âŒ Connection timed out. Try again!")
