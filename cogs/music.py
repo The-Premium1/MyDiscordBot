@@ -38,6 +38,11 @@ if not FFMPEG_EXE:
 # Log what we found
 print(f"🎵 FFmpeg Detection: {FFMPEG_EXE if FFMPEG_EXE else 'NOT FOUND (will use system default)'}")
 
+# DEBUG: Check if ffmpeg exists in common locations
+import shutil
+ffmpeg_in_path = shutil.which('ffmpeg')
+print(f"🎵 FFmpeg in PATH: {ffmpeg_in_path}")
+
 
 class MusicManager:
     def __init__(self):
@@ -304,9 +309,12 @@ class Music(commands.Cog):
         """Plays a song from YouTube."""
         if not ctx.author.voice:
             return await ctx.send("❌ Join a voice channel first!")
-        if not ctx.voice_client:
+        
+        # Get or create voice client for this guild
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        if not voice_client:
             try:
-                await ctx.author.voice.channel.connect()
+                voice_client = await ctx.author.voice.channel.connect()
             except Exception as e:
                 return await ctx.send(f"❌ Can't join channel: {str(e)[:50]}")
 
@@ -321,7 +329,7 @@ class Music(commands.Cog):
                     self.manager.queue.append(info)
                     await ctx.send(f"✅ Added to queue: **{info['title']}**", delete_after=10)
 
-                    if ctx.voice_client and not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
+                    if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
                         self.play_next(ctx)
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
@@ -379,18 +387,21 @@ class Music(commands.Cog):
     @commands.command(aliases=['leave', 'disconnect'])
     async def stop(self, ctx: commands.Context):
         """Stops the music and disconnects the bot."""
-        if not ctx.voice_client:
+        # Get the actual voice client from the bot for this guild
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        
+        if not voice_client:
             return await ctx.send("❌ I'm not in a voice channel!")
         
         # Clear queue and stop music
         self.manager.queue.clear()
         self.manager.current = None
         
-        if ctx.voice_client.is_playing():
-            ctx.voice_client.stop()
+        if voice_client.is_playing():
+            voice_client.stop()
         
         # Disconnect
-        await ctx.voice_client.disconnect(force=True)
+        await voice_client.disconnect(force=True)
         await self.update_vc_status("☕ Chilling...")
         await ctx.send("👋 Disconnected.")
 
@@ -412,15 +423,18 @@ class Music(commands.Cog):
         
         target_channel = ctx.author.voice.channel
         
+        # Get current bot voice client for this guild
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        
         # If bot is already in a voice channel
-        if ctx.voice_client:
+        if voice_client:
+            # If already in the same channel, do nothing
+            if voice_client.channel == target_channel:
+                return await ctx.send("✅ Already in your channel!")
+            # If in different channel, disconnect first
             try:
-                # If already in the same channel, do nothing
-                if ctx.voice_client.channel == target_channel:
-                    return await ctx.send("✅ Already in your channel!")
-                # If in different channel, disconnect first
-                await ctx.voice_client.disconnect(force=True)
-                await asyncio.sleep(1.0)  # Wait for Discord to process disconnect
+                await voice_client.disconnect(force=True)
+                await asyncio.sleep(1.0)
             except Exception as e:
                 print(f"Error disconnecting: {e}")
         
@@ -430,6 +444,7 @@ class Music(commands.Cog):
             await self.update_vc_status("☕ Chilling...")
             await ctx.send("✅ Joined!")
         except Exception as e:
+            print(f"Join error: {e}")
             await ctx.send(f"❌ Can't join: {str(e)[:50]}")
 
     @commands.command(aliases=['c'])
@@ -443,6 +458,21 @@ class Music(commands.Cog):
         if not self.manager.current:
             return await ctx.send("No song is currently playing! ☕")
         await self.send_now_playing(ctx)
+
+    @commands.command()
+    async def ffmpegtest(self, ctx: commands.Context):
+        """DEBUG: Check FFmpeg status on the server."""
+        import shutil
+        ffmpeg_path = shutil.which('ffmpeg')
+        
+        status = f"""
+🎵 **FFmpeg Debug Info:**
+- Detected path: `{FFMPEG_EXE or 'Not found'}`
+- In PATH: `{ffmpeg_path or 'Not found'}`
+- FFMPEG_OPTIONS: `{self.FFMPEG_OPTIONS}`
+- Bot voice clients: `{len(self.bot.voice_clients)}`
+        """
+        await ctx.send(status)
 
 
 async def setup(bot: commands.Bot):
