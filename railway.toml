@@ -1,8 +1,0 @@
-[build]
-builder = "nixpacks"
-
-[build.nixpacks]
-providers = ["python"]
-
-[[build.nixpacks.packages]]
-nix = ["ffmpeg", "libopus", "libsodium"]
