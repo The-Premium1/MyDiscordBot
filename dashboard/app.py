@@ -763,4 +763,15 @@ def log_analytics():
 if __name__ == '__main__':
     print("\n🚀 Starting Flask app locally (dev mode)")
     print("⚠️ For production, use: gunicorn -w 1 -b 0.0.0.0:5000 app:app")
+    
+    # CRITICAL: If running on Railway/production, this should NOT execute
+    # Only run Flask directly if PORT env var is not set (local dev)
+    import os
+    if 'PORT' in os.environ and os.environ['PORT'].strip():
+        print("❌ FATAL: This is a production environment!")
+        print("❌ Flask should NOT run directly - gunicorn should handle this")
+        print("❌ The Procfile should be used instead!")
+        import sys
+        sys.exit(1)
+    
     app.run(host='0.0.0.0', port=5000, debug=False)
