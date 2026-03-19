@@ -1,2 +1,2 @@
-web: cd dashboard && bash start.sh
+web: sh -c 'cd dashboard && python app.py'
 worker: python main.py
