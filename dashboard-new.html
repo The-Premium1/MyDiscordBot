@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Dashboard - Server Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #36393f;
+            color: #dcddde;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+
+        .header {
+            background: #2c2f33;
+            padding: 20px;
+            border-bottom: 2px solid #1a1b1e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #7289da;
+        }
+
+        .user-info {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .user-info span {
+            color: #b9bbbe;
+        }
+
+        .logout-btn {
+            background: #f04747;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background: #d84545;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .server-selector {
+            background: #2c2f33;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #202225;
+        }
+
+        .server-selector h2 {
+            color: #7289da;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .server-selector select {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px;
+            background: #40444b;
+            color: white;
+            border: 1px solid #202225;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .server-selector select:focus {
+            outline: none;
+            border-color: #7289da;
+        }
+
+        .settings-panel {
+            background: #2c2f33;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #202225;
+        }
+
+        .settings-panel h2 {
+            color: #7289da;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+
+        .setting-group {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #202225;
+        }
+
+        .setting-group:last-child {
+            border-bottom: none;
+        }
+
+        .setting-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #dcddde;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .setting-description {
+            display: block;
+            margin-bottom: 10px;
+            color: #72767d;
+            font-size: 12px;
+        }
+
+        .setting-input,
+        .setting-select {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px;
+            background: #40444b;
+            color: white;
+            border: 1px solid #202225;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .setting-input:focus,
+        .setting-select:focus {
+            outline: none;
+            border-color: #7289da;
+            background: #47494f;
+        }
+
+        .setting-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-switch {
+            width: 50px;
+            height: 28px;
+            background: #40444b;
+            border: 1px solid #202225;
+            border-radius: 14px;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #43b581;
+            border-color: #43b581;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active::after {
+            left: 26px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #7289da;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5e75c3;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: #40444b;
+            color: #b9bbbe;
+        }
+
+        .btn-secondary:hover {
+            background: #47494f;
+            color: #dcddde;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #40444b;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #7289da;
+        }
+
+        .stat-label {
+            color: #72767d;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            color: #7289da;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .message {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .message.success {
+            background: rgba(67, 181, 129, 0.1);
+            color: #43b581;
+            border: 1px solid #43b581;
+        }
+
+        .message.error {
+            background: rgba(240, 71, 71, 0.1);
+            color: #f04747;
+            border: 1px solid #f04747;
+        }
+
+        .message.loading {
+            background: rgba(114, 137, 218, 0.1);
+            color: #7289da;
+            border: 1px solid #7289da;
+        }
+
+        .loading {
+            color: #72767d;
+            font-style: italic;
+        }
+
+        .no-servers {
+            background: #40444b;
+            padding: 20px;
+            border-radius: 4px;
+            text-align: center;
+            color: #72767d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🤖 Bot Dashboard</h1>
+    <div class="user-info">
+        <span id="username">Loading...</span>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+</div>
+
+<div class="container">
+    <div id="message"></div>
+
+    <!-- Server Selector -->
+    <div class="server-selector">
+        <h2>📌 Select Your Server</h2>
+        <select id="serverSelect" onchange="loadServerConfig()">
+            <option value="">Loading your servers...</option>
+        </select>
+    </div>
+
+    <!-- Server Stats -->
+    <div id="statsContainer" class="stats-grid" style="display: none;"></div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel" style="display: none;">
+        <h2>⚙️ Server Settings</h2>
+
+        <!-- Prefix Setting -->
+        <div class="setting-group">
+            <label class="setting-label">Bot Prefix</label>
+            <span class="setting-description">Character used to trigger commands (e.g., ! or ?)</span>
+            <input type="text" id="prefixInput" class="setting-input" placeholder="!" maxlength="3">
+        </div>
+
+        <!-- Moderation Settings -->
+        <div class="setting-group">
+            <label class="setting-label">🛡️ Moderation Settings</label>
+            
+            <div style="margin: 15px 0;">
+                <label class="setting-label">Moderation Enabled</label>
+                <div class="setting-toggle">
+                    <div class="toggle-switch" id="modToggle" onclick="toggleSetting(this)"></div>
+                    <span id="modStatus">Disabled</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="setting-label">Auto-ban on N warnings</label>
+                <span class="setting-description">Automatically ban members after this many warnings</span>
+                <input type="number" id="autobanWarnings" class="setting-input" placeholder="3" min="1" max="10">
+            </div>
+        </div>
+
+        <!-- Logging -->
+        <div class="setting-group">
+            <label class="setting-label">📝 Logging</label>
+            
+            <div style="margin: 15px 0;">
+                <label class="setting-label">Enable Logging</label>
+                <div class="setting-toggle">
+                    <div class="toggle-switch" id="loggingToggle" onclick="toggleSetting(this)"></div>
+                    <span id="loggingStatus">Disabled</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="setting-label">Log Channel</label>
+                <span class="setting-description">Channel ID where moderation logs are sent</span>
+                <input type="text" id="logChannel" class="setting-input" placeholder="Channel ID">
+            </div>
+        </div>
+
+        <!-- Welcome Messages -->
+        <div class="setting-group">
+            <label class="setting-label">👋 Welcome Message</label>
+            
+            <div style="margin: 15px 0;">
+                <label class="setting-label">Enable Welcome Messages</label>
+                <div class="setting-toggle">
+                    <div class="toggle-switch" id="welcomeToggle" onclick="toggleSetting(this)"></div>
+                    <span id="welcomeStatus">Disabled</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="setting-label">Welcome Message</label>
+                <span class="setting-description">Message sent when new members join (use {user} for mention)</span>
+                <textarea id="welcomeMessage" class="setting-input" placeholder="Welcome {user} to our server!" style="height: 80px; resize: vertical;"></textarea>
+            </div>
+        </div>
+
+        <!-- Leveling -->
+        <div class="setting-group">
+            <label class="setting-label">📊 Leveling System</label>
+            
+            <div style="margin: 15px 0;">
+                <label class="setting-label">Enable Leveling</label>
+                <div class="setting-toggle">
+                    <div class="toggle-switch" id="levelingToggle" onclick="toggleSetting(this)"></div>
+                    <span id="levelingStatus">Disabled</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save Button -->
+        <div class="button-group">
+            <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+            <button class="btn btn-secondary" onclick="resetSettings()">↺ Reset to Defaults</button>
+        </div>
+    </div>
+
+    <!-- No Server Selected -->
+    <div id="noServerMessage" class="no-servers">
+        <p>👈 Select a server from the dropdown to manage its settings</p>
+    </div>
+
+</div>
+
+<script>
+let currentServer = null;
+let settings = {};
+
+// Load user info
+async function loadUserInfo() {
+    try {
+        const res = await fetch('/api/user-info');
+        const data = await res.json();
+        document.getElementById('username').textContent = `${data.username}`;
+    } catch (e) {
+        console.error('Error loading user:', e);
+    }
+}
+
+// Load user's servers
+async function loadServers() {
+    try {
+        const res = await fetch('/api/servers');
+        const servers = await res.json();
+        const select = document.getElementById('serverSelect');
+        
+        if (!Array.isArray(servers) || servers.length === 0) {
+            select.innerHTML = '<option value="">No servers found. Make sure bot is in your server!</option>';
+            return;
+        }
+
+        select.innerHTML = '<option value="">Select a server...</option>';
+        servers.forEach(server => {
+            const option = document.createElement('option');
+            option.value = server.id;
+            option.textContent = server.name + ` (${server.members} members)`;
+            select.appendChild(option);
+        });
+    } catch (e) {
+        console.error('Error loading servers:', e);
+        document.getElementById('serverSelect').innerHTML = '<option value="">Error loading servers</option>';
+    }
+}
+
+// Load server config
+async function loadServerConfig() {
+    const serverId = document.getElementById('serverSelect').value;
+    
+    if (!serverId) {
+        document.getElementById('settingsPanel').style.display = 'none';
+        document.getElementById('statsContainer').style.display = 'none';
+        document.getElementById('noServerMessage').style.display = 'block';
+        return;
+    }
+
+    currentServer = serverId;
+    showMessage('Loading server settings...', 'loading');
+
+    try {
+        // Get config
+        const configRes = await fetch(`/api/server/${serverId}/config`);
+        const config = await configRes.json();
+
+        // Get stats
+        const statsRes = await fetch(`/api/server/${serverId}/stats`);
+        const stats = await statsRes.json();
+
+        // Display stats
+        const statsHtml = `
+            <div class="stat-card">
+                <div class="stat-label">Members</div>
+                <div class="stat-value">${config.members_count || 0}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Commands Used (7d)</div>
+                <div class="stat-value">${stats.total_commands || 0}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Users</div>
+                <div class="stat-value">${stats.active_users || 0}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Success Rate</div>
+                <div class="stat-value">${stats.total_commands > 0 ? Math.round((stats.successful_commands / stats.total_commands) * 100) : 0}%</div>
+            </div>
+        `;
+        document.getElementById('statsContainer').innerHTML = statsHtml;
+        document.getElementById('statsContainer').style.display = 'grid';
+
+        // Load settings into form
+        settings = config.settings || {};
+        document.getElementById('prefixInput').value = config.prefix || '!';
+        
+        // Set toggle states
+        document.getElementById('modToggle').classList.toggle('active', settings.moderation_enabled);
+        document.getElementById('modStatus').textContent = settings.moderation_enabled ? 'Enabled' : 'Disabled';
+        document.getElementById('autobanWarnings').value = settings.autoban_warnings || 3;
+
+        document.getElementById('loggingToggle').classList.toggle('active', settings.logging_enabled);
+        document.getElementById('loggingStatus').textContent = settings.logging_enabled ? 'Enabled' : 'Disabled';
+        document.getElementById('logChannel').value = settings.log_channel || '';
+
+        document.getElementById('welcomeToggle').classList.toggle('active', settings.welcome_enabled);
+        document.getElementById('welcomeStatus').textContent = settings.welcome_enabled ? 'Enabled' : 'Disabled';
+        document.getElementById('welcomeMessage').value = settings.welcome_message || '';
+
+        document.getElementById('levelingToggle').classList.toggle('active', settings.leveling_enabled);
+        document.getElementById('levelingStatus').textContent = settings.leveling_enabled ? 'Enabled' : 'Disabled';
+
+        document.getElementById('settingsPanel').style.display = 'block';
+        document.getElementById('noServerMessage').style.display = 'none';
+        document.getElementById('message').innerHTML = '';
+
+    } catch (e) {
+        showMessage('Error loading server config: ' + e.message, 'error');
+        console.error(e);
+    }
+}
+
+// Toggle setting
+function toggleSetting(element) {
+    element.classList.toggle('active');
+    const status = element.nextElementSibling;
+    status.textContent = element.classList.contains('active') ? 'Enabled' : 'Disabled';
+}
+
+// Save settings
+async function saveSettings() {
+    if (!currentServer) return;
+
+    const newSettings = {
+        moderation_enabled: document.getElementById('modToggle').classList.contains('active'),
+        autoban_warnings: parseInt(document.getElementById('autobanWarnings').value) || 3,
+        logging_enabled: document.getElementById('loggingToggle').classList.contains('active'),
+        log_channel: document.getElementById('logChannel').value,
+        welcome_enabled: document.getElementById('welcomeToggle').classList.contains('active'),
+        welcome_message: document.getElementById('welcomeMessage').value,
+        leveling_enabled: document.getElementById('levelingToggle').classList.contains('active')
+    };
+
+    const prefix = document.getElementById('prefixInput').value || '!';
+
+    showMessage('Saving settings...', 'loading');
+
+    try {
+        const res = await fetch(`/api/server/${currentServer}/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: newSettings, prefix: prefix })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+            showMessage('✅ Settings saved successfully!', 'success');
+        } else {
+            showMessage('Error: ' + result.message, 'error');
+        }
+    } catch (e) {
+        showMessage('Error saving settings: ' + e.message, 'error');
+        console.error(e);
+    }
+}
+
+// Reset settings
+function resetSettings() {
+    if (confirm('Are you sure? This will reset to defaults.')) {
+        document.getElementById('prefixInput').value = '!';
+        document.getElementById('modToggle').classList.remove('active');
+        document.getElementById('modStatus').textContent = 'Disabled';
+        document.getElementById('autobanWarnings').value = '3';
+        // Reset all others...
+        saveSettings();
+    }
+}
+
+// Show message
+function showMessage(text, type) {
+    const el = document.getElementById('message');
+    el.className = 'message ' + type;
+    el.textContent = text;
+}
+
+// Init
+loadUserInfo();
+loadServers();
+</script>
+
+</body>
+</html>
