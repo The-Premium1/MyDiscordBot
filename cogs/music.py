@@ -439,6 +439,17 @@ class Music(commands.Cog):
                             await ctx.send("Added to queue, will play next!")
                     else:
                         print(f"âŒ Voice client not connected after adding to queue")
+                        # Wait and retry - Discord sometimes takes time to establish connection
+                        print(f"ðŸ”„ Retrying voice connection check...")
+                        for retry in range(5):
+                            await asyncio.sleep(1.0)
+                            voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+                            if voice_client and voice_client.is_connected():
+                                print(f"âœ… Voice connection established after retry {retry + 1}")
+                                self.play_next(ctx.guild.id)
+                                break
+                        else:
+                            print(f"âŒ Voice client still not connected after retries")
                         
             except yt_dlp.utils.DownloadError as e:
                 print(f"âŒ YouTube error: {str(e)}")
@@ -545,26 +556,32 @@ class Music(commands.Cog):
                 # In different channel - disconnect first before joining new one
                 print(f"ðŸŽ¤ Bot in {voice_client.channel.name}, moving to {target_channel.name}...")
                 await voice_client.disconnect(force=True)
-                await asyncio.sleep(1.0)  # Wait for clean disconnect
+                await asyncio.sleep(1.0)
         
         # Try to join - Discord auto-disconnects from old channels
         try:
             print(f"ðŸŽ¤ Joining {target_channel.name}...")
-            # reconnect=False prevents auto-reconnect loops that cause the bot to rejoin after disconnect
-            voice_client = await target_channel.connect(timeout=10.0, reconnect=False)
+            voice_client = await target_channel.connect(timeout=15.0, reconnect=False)
             
-            # Railway needs more time for connection to be fully established
+            # Railway needs MORE time for connection to be fully established
             print(f"ðŸŽ¤ Voice connected, waiting for stabilization...")
-            await asyncio.sleep(2.5)  # Increased to 2.5s for distributed server stability
+            await asyncio.sleep(3.0)
             
             # Multi-check to ensure connection is truly stable
-            for check in range(3):
+            connection_ok = False
+            for check in range(5):
+                await asyncio.sleep(0.5)
                 if voice_client.is_connected():
                     print(f"âœ… Connection verified at check {check + 1}")
+                    connection_ok = True
                     break
-                await asyncio.sleep(0.3)
-            else:
-                await ctx.send("âŒ Failed to connect to voice!")
+            
+            if not connection_ok:
+                await ctx.send("âŒ Voice connection failed to stabilize. Try again!")
+                try:
+                    await voice_client.disconnect(force=True)
+                except:
+                    pass
                 return
             
             print(f"âœ… Joined {target_channel.name}")
@@ -576,7 +593,6 @@ class Music(commands.Cog):
             print(f"âŒ Join timeout for {target_channel.name}")
         except Exception as e:
             error_msg = str(e)
-            # Don't show 4006 errors to user - they often succeed anyway
             if "4006" not in error_msg:
                 await ctx.send(f"Can't join: {error_msg[:80]}")
             print(f"âŒ Join error: {error_msg}")
@@ -626,10 +642,37 @@ class Music(commands.Cog):
         else:
             await ctx.send("Voice connection: FAILED")
 
-    @commands.command(aliases=['c'])
-    async def clear(self, ctx: commands.Context):
-        self.manager.queue.clear()
-        await ctx.send("ðŸ§¹ Queue cleared!")
+    @commands.command()
+    async def vc_status(self, ctx: commands.Context):
+        """Check voice connection status."""
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        
+        embed = discord.Embed(title="Voice Connection Status", color=discord.Color.blue())
+        
+        if not voice_client:
+            embed.add_field(name="Connected", value="âŒ No voice client", inline=False)
+            return await ctx.send(embed=embed)
+        
+        embed.add_field(name="Connected", value=f"{'âœ… Yes' if voice_client.is_connected() else 'âŒ No'}", inline=False)
+        embed.add_field(name="Channel", value=f"{voice_client.channel.name if voice_client.channel else 'N/A'}", inline=False)
+        embed.add_field(name="Playing", value=f"{'âœ… Yes' if voice_client.is_playing() else 'âŒ No'}", inline=False)
+        embed.add_field(name="Latency", value=f"{voice_client.latency*1000:.0f}ms", inline=False)
+        embed.add_field(name="Current Song", value=f"{self.manager.current['title'] if self.manager.current else 'None'}", inline=False)
+        embed.add_field(name="Queue Length", value=f"{len(self.manager.queue)}", inline=False)
+        
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def ping(self, ctx: commands.Context):
+        """Reconnect voice and test connection."""
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        
+        if voice_client and voice_client.is_connected():
+            print(f"ðŸ”„ Pinging voice connection...")
+            latency = voice_client.latency
+            await ctx.send(f"ðŸ“ Pong! Latency: {latency*1000:.0f}ms")
+        else:
+            await ctx.send("âŒ Not connected to voice. Try `!join` first.")
 
     @commands.command(aliases=['np'])
     async def nowplaying(self, ctx: commands.Context):
