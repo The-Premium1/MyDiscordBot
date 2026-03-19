@@ -213,22 +213,32 @@ class Music(commands.Cog):
                 source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(self.song_info['url'], **opts))
                 source.volume = m.volume
                 m.queue.insert(0, self.song_info)
-                self.ctx.voice_client.play(source, after=lambda e: self.cog.play_next(self.ctx))
+                self.ctx.voice_client.play(source, after=lambda e: self.cog.play_next(self.ctx.guild.id))
                 m.start_time = time.time() - new_time
                 await interaction.message.edit(embed=self.create_embed(), view=self)
 
-    def _play_after(self, ctx: commands.Context, exc):
-        asyncio.run_coroutine_threadsafe(self._after_play_task(ctx, exc), self.bot.loop)
+    # Note: play_next is now guild-based and called via 'after' callback automatically
 
-    async def _after_play_task(self, ctx: commands.Context, exc):
-        await asyncio.sleep(0.2)
-        self.play_next(ctx)
-
-    def play_next(self, ctx: commands.Context):
+    def play_next(self, guild_id: int):
+        """Play next song in queue using guild_id (not context-dependent)."""
         m = self.manager
-        if ctx.voice_client and ctx.voice_client.source:
+        
+        # Get voice client using guild_id (not context-specific)
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            print(f"❌ Guild {guild_id} not found")
+            return
+        
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=guild)
+        if not voice_client:
+            print(f"❌ No voice client for guild {guild_id}")
+            m.current = None
+            return
+        
+        # Cleanup previous source
+        if voice_client.source:
             try:
-                ctx.voice_client.source.cleanup()
+                voice_client.source.cleanup()
             except Exception:
                 pass
 
@@ -240,7 +250,7 @@ class Music(commands.Cog):
                 m.queue.append(m.current)
 
         # 2. Play next song
-        if len(m.queue) > 0 and ctx.voice_client:
+        if len(m.queue) > 0:
             m.current = m.queue.pop(0)
             m.start_time = time.time()
 
@@ -250,17 +260,20 @@ class Music(commands.Cog):
             try:
                 source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
                 source.volume = m.volume
-                ctx.voice_client.play(source, after=lambda e: self.play_next(ctx))
-                asyncio.run_coroutine_threadsafe(self.send_now_playing(ctx), self.bot.loop)
+                # Use guild_id in lambda instead of context
+                voice_client.play(source, after=lambda e: self.play_next(guild_id))
+                
+                # Create fake ctx for send_now_playing (we'll refactor this next)
+                # For now, just update status
+                asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
             except Exception as e:
                 print(f"❌ Play Error: {str(e)}")
                 asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
                 # Skip to next song on error
-                self.play_next(ctx)
+                self.play_next(guild_id)
         else:
             m.current = None
-            if ctx and ctx.voice_client:
-                asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+            asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
         m = self.manager
@@ -332,7 +345,7 @@ class Music(commands.Cog):
                     await ctx.send(f"✅ Added to queue: **{info['title']}**", delete_after=10)
 
                     if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
-                        self.play_next(ctx)
+                        self.play_next(ctx.guild.id)
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
                     await ctx.send("❌ YouTube is blocking this request. Try a different song or source.")
