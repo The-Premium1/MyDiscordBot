@@ -1,0 +1,9 @@
+[build]
+pkgs = ["ffmpeg", "libopus", "libsodium", "python311", "gcc"]
+
+# Make ffmpeg available in PATH for runtime
+[build.env]
+PATH = "/run/current-system/sw/bin:$PATH"
+
+[build.run]
+cmd = "pip install -r requirements.txt && echo 'FFmpeg:' && which ffmpeg || echo 'ffmpeg not in PATH yet'"
