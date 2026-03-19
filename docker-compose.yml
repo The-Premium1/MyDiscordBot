@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DASHBOARD_URL=http://dashboard:5000
+      - BOT_ANALYTICS_TOKEN=${BOT_ANALYTICS_TOKEN}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - dashboard
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard.Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+    volumes:
+      - ./dashboard:/app/dashboard
+      - ./dashboard.db:/app/dashboard.db
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - dashboard
+    restart: unless-stopped
