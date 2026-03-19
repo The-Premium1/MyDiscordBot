@@ -36,12 +36,12 @@ if not FFMPEG_EXE:
         FFMPEG_EXE = local_path
 
 # Log what we found
-print(f"🎵 FFmpeg Detection: {FFMPEG_EXE if FFMPEG_EXE else 'NOT FOUND (will use system default)'}")
+print(f"ðŸŽµ FFmpeg Detection: {FFMPEG_EXE if FFMPEG_EXE else 'NOT FOUND (will use system default)'}")
 
 # DEBUG: Check if ffmpeg exists in common locations
 import shutil
 ffmpeg_in_path = shutil.which('ffmpeg')
-print(f"🎵 FFmpeg in PATH: {ffmpeg_in_path}")
+print(f"ðŸŽµ FFmpeg in PATH: {ffmpeg_in_path}")
 
 
 class MusicManager:
@@ -59,7 +59,8 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.manager = MusicManager()
-        self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True, 'no-warnings': True}
+        # Enable warnings to catch YouTube issues - helps with debugging on Railway
+        self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': False, 'no-warnings': False}
         
         # Build FFMPEG options - only set executable if explicitly found
         self.FFMPEG_OPTIONS = {
@@ -69,14 +70,14 @@ class Music(commands.Cog):
         if FFMPEG_EXE:
             self.FFMPEG_OPTIONS['executable'] = FFMPEG_EXE
         
-        print(f"🎵 Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
+        print(f"ðŸŽµ Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
 
     async def check_voice_channels(self, ctx: commands.Context) -> bool:
         if not ctx.voice_client:
-            await ctx.send("🎧 I'm not in a voice channel!")
+            await ctx.send("ðŸŽ§ I'm not in a voice channel!")
             return False
         if not ctx.author.voice or ctx.author.voice.channel != ctx.voice_client.channel:
-            await ctx.send("🚫 You must be in my voice channel!")
+            await ctx.send("ðŸš« You must be in my voice channel!")
             return False
         return True
 
@@ -103,10 +104,10 @@ class Music(commands.Cog):
             total = self.song_info.get('duration', 0) or 0
             bar_size = 15
             progress = int((elapsed / total) * bar_size) if total > 0 else 0
-            bar = "▬" * progress + "🔘" + "▬" * max(0, bar_size - progress - 1)
+            bar = "â–¬" * progress + "ðŸ”˜" + "â–¬" * max(0, bar_size - progress - 1)
 
             def fmt(s): return f"{s//60:02d}:{s%60:02d}"
-            loop_statuses = ["Off", "🔂 Song", "🔁 Queue"]
+            loop_statuses = ["Off", "ðŸ”‚ Song", "ðŸ” Queue"]
 
             embed = discord.Embed(
                 title=self.song_info.get('title', 'Playing'),
@@ -115,28 +116,28 @@ class Music(commands.Cog):
             )
             embed.set_thumbnail(url=self.song_info.get('thumbnail'))
             embed.add_field(name="Timeline", value=f"`{fmt(elapsed)}` {bar} `{fmt(total)}`", inline=False)
-            embed.add_field(name="Status", value=f"🔊 {int(m.volume * 100)}% | 🔄 Loop: {loop_statuses[m.loop_mode]}", inline=True)
-            embed.add_field(name="Queue", value=f"🎶 {len(m.queue)} songs", inline=True)
+            embed.add_field(name="Status", value=f"ðŸ”Š {int(m.volume * 100)}% | ðŸ”„ Loop: {loop_statuses[m.loop_mode]}", inline=True)
+            embed.add_field(name="Queue", value=f"ðŸŽ¶ {len(m.queue)} songs", inline=True)
             return embed
 
         @discord.ui.button(label="Pause/Resume", style=discord.ButtonStyle.blurple, row=0)
         async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
             if self.ctx.voice_client.is_playing():
                 self.ctx.voice_client.pause()
-                await self.cog.update_vc_status("☕ Chilling...")
-                await interaction.response.send_message("⏸️ Music paused.", ephemeral=True)
+                await self.cog.update_vc_status("â˜• Chilling...")
+                await interaction.response.send_message("â¸ï¸ Music paused.", ephemeral=True)
             elif self.ctx.voice_client.is_paused():
                 self.ctx.voice_client.resume()
-                await self.cog.update_vc_status(f"🔊 Playing now: {self.song_info['title']}")
-                await interaction.response.send_message("▶️ Music resumed.", ephemeral=True)
+                await self.cog.update_vc_status(f"ðŸ”Š Playing now: {self.song_info['title']}")
+                await interaction.response.send_message("â–¶ï¸ Music resumed.", ephemeral=True)
             await interaction.message.edit(embed=self.create_embed(), view=self)
 
-        @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.gray, row=0)
+        @discord.ui.button(emoji="ðŸ”€", style=discord.ButtonStyle.gray, row=0)
         async def shuffle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
             if len(self.cog.manager.queue) < 2:
                 return await interaction.response.send_message("Not enough songs to shuffle!", ephemeral=True)
             random.shuffle(self.cog.manager.queue)
-            await interaction.response.send_message("🔀 Queue shuffled!", ephemeral=True)
+            await interaction.response.send_message("ðŸ”€ Queue shuffled!", ephemeral=True)
             await interaction.message.edit(embed=self.create_embed(), view=self)
 
         @discord.ui.button(label="Loop: Off", style=discord.ButtonStyle.gray, row=0)
@@ -147,29 +148,29 @@ class Music(commands.Cog):
             button.label = modes[m.loop_mode]
             await interaction.response.edit_message(embed=self.create_embed(), view=self)
 
-        @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.gray, row=1)
+        @discord.ui.button(emoji="â®ï¸", style=discord.ButtonStyle.gray, row=1)
         async def restart_song(self, interaction: discord.Interaction, button: discord.ui.Button):
             if not await self.cog.check_voice_channels(self.ctx):
                 return
             await interaction.response.defer()
             self.ctx.voice_client.stop()
             self.cog.manager.queue.insert(0, self.song_info)
-            await interaction.followup.send("⏮️ Restarting song...", ephemeral=True)
+            await interaction.followup.send("â®ï¸ Restarting song...", ephemeral=True)
 
-        @discord.ui.button(emoji="⏪", style=discord.ButtonStyle.gray, row=1)
+        @discord.ui.button(emoji="âª", style=discord.ButtonStyle.gray, row=1)
         async def backward(self, interaction: discord.Interaction, button: discord.ui.Button):
             await self.seek_helper(interaction, -10)
 
-        @discord.ui.button(emoji="⏩", style=discord.ButtonStyle.gray, row=1)
+        @discord.ui.button(emoji="â©", style=discord.ButtonStyle.gray, row=1)
         async def forward(self, interaction: discord.Interaction, button: discord.ui.Button):
             await self.seek_helper(interaction, 10)
 
-        @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.gray, row=1)
+        @discord.ui.button(emoji="â­ï¸", style=discord.ButtonStyle.gray, row=1)
         async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
             self.ctx.voice_client.stop()
-            await interaction.response.send_message("⏭️ Skipped!", ephemeral=True)
+            await interaction.response.send_message("â­ï¸ Skipped!", ephemeral=True)
 
-        @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.gray, row=2)
+        @discord.ui.button(emoji="ðŸ”‰", style=discord.ButtonStyle.gray, row=2)
         async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
             m = self.cog.manager
             m.volume = max(0.0, m.volume - 0.1)
@@ -178,10 +179,10 @@ class Music(commands.Cog):
                     self.ctx.voice_client.source.volume = m.volume
                 except Exception:
                     pass
-            await interaction.response.send_message(f"🔊 Volume set to {int(m.volume*100)}%", ephemeral=True)
+            await interaction.response.send_message(f"ðŸ”Š Volume set to {int(m.volume*100)}%", ephemeral=True)
             await interaction.message.edit(embed=self.create_embed(), view=self)
 
-        @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.gray, row=2)
+        @discord.ui.button(emoji="ðŸ”Š", style=discord.ButtonStyle.gray, row=2)
         async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
             m = self.cog.manager
             m.volume = min(2.0, m.volume + 0.1)
@@ -190,7 +191,7 @@ class Music(commands.Cog):
                     self.ctx.voice_client.source.volume = m.volume
                 except Exception:
                     pass
-            await interaction.response.send_message(f"🔊 Volume set to {int(m.volume*100)}%", ephemeral=True)
+            await interaction.response.send_message(f"ðŸ”Š Volume set to {int(m.volume*100)}%", ephemeral=True)
             await interaction.message.edit(embed=self.create_embed(), view=self)
 
         async def seek_helper(self, interaction: discord.Interaction, seconds: int):
@@ -226,29 +227,33 @@ class Music(commands.Cog):
         # Get voice client using guild_id (not context-specific)
         guild = self.bot.get_guild(guild_id)
         if not guild:
-            print(f"❌ Guild {guild_id} not found")
+            print(f"âŒ Guild {guild_id} not found")
             return
         
         voice_client = discord.utils.get(self.bot.voice_clients, guild=guild)
         if not voice_client:
-            print(f"❌ No voice client for guild {guild_id}")
+            print(f"âŒ No voice client for guild {guild_id}")
             m.current = None
             return
         
         # CRITICAL: Check if voice client is actually connected before playing
         if not voice_client.is_connected():
-            print(f"❌ Voice client exists but NOT CONNECTED for guild {guild_id}")
+            print(f"âŒ Voice client exists but NOT CONNECTED for guild {guild_id}")
             m.current = None
             return
         
-        print(f"🎵 play_next called: queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
+        # Small delay to ensure voice connection is truly ready before playback
+        # This fixes timing issues on distributed servers like Railway
+        time.sleep(0.2)
+        
+        print(f"ðŸŽµ play_next called: queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
         
         # Cleanup previous source if still exists
         try:
             if hasattr(voice_client, 'source') and voice_client.source:
                 voice_client.source.cleanup()
         except Exception as e:
-            print(f"⚠️ Source cleanup error: {e}")
+            print(f"âš ï¸ Source cleanup error: {e}")
 
         # 1. Handle Loop Modes
         if m.current:
@@ -263,34 +268,38 @@ class Music(commands.Cog):
             m.current = m.queue.pop(0)
             m.start_time = time.time()
 
-            status_text = f"🔊 Playing now: {m.current['title']}"
-            print(f"🎵 {status_text}")
+            status_text = f"ðŸ”Š Playing now: {m.current['title']}"
+            print(f"ðŸŽµ {status_text}")
             asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
 
             try:
-                print(f"🎵 Creating PCM audio source for: {m.current['title']}")
+                print(f"ðŸŽµ Creating PCM audio source for: {m.current['title']}")
                 source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(m.current['url'], **self.FFMPEG_OPTIONS))
                 source.volume = m.volume
                 
-                # Use guild_id in lambda instead of context
-                print(f"🎵 Starting playback with callback to play_next")
-                voice_client.play(source, after=lambda e: self.play_next(guild_id))
-                print(f"✅ Playback started for {m.current['title']}")
+                # Use guild_id in callback with error handling
+                print(f"ðŸŽµ Starting playback with callback to play_next")
+                def playback_finished(error):
+                    if error:
+                        print(f"âŒ Playback error: {error}")
+                    self.play_next(guild_id)
+                voice_client.play(source, after=playback_finished)
+                print(f"âœ… Playback started for {m.current['title']}")
                 
                 asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
             except Exception as e:
-                print(f"❌ Play Error: {type(e).__name__}: {str(e)}")
+                print(f"âŒ Play Error: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+                asyncio.run_coroutine_threadsafe(self.update_vc_status("â˜• Chilling..."), self.bot.loop)
                 m.current = None
                 # Skip to next song on error
                 if len(m.queue) > 0:
                     self.play_next(guild_id)
         else:
             m.current = None
-            print(f"🎵 Queue empty, waiting for next song")
-            asyncio.run_coroutine_threadsafe(self.update_vc_status("☕ Chilling..."), self.bot.loop)
+            print(f"ðŸŽµ Queue empty, waiting for next song")
+            asyncio.run_coroutine_threadsafe(self.update_vc_status("â˜• Chilling..."), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
         m = self.manager
@@ -307,7 +316,7 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f'🎵 Music cog loaded!')
+        print(f'ðŸŽµ Music cog loaded!')
         self.bot.loop.create_task(self.idle_check())
     
     @commands.Cog.listener()
@@ -318,7 +327,7 @@ class Music(commands.Cog):
                 # Bot was disconnected
                 self.manager.queue.clear()
                 self.manager.current = None
-                print("🎵 Bot disconnected from voice channel")
+                print("ðŸŽµ Bot disconnected from voice channel")
 
     async def idle_check(self):
         """Disabled: was causing bot to disconnect after 3 mins of silence"""
@@ -330,21 +339,24 @@ class Music(commands.Cog):
     async def play(self, ctx: commands.Context, *, search: str):
         """Plays a song from YouTube."""
         if not ctx.author.voice:
-            return await ctx.send("❌ Join a voice channel first!")
+            return await ctx.send("âŒ Join a voice channel first!")
         
         # Get or create voice client for this guild
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if not voice_client:
             try:
-                print(f"🎤 Attempting to join VC for play command...")
+                print(f"ðŸŽ¤ Attempting to join VC for play command...")
                 voice_client = await ctx.author.voice.channel.connect(timeout=30.0, reconnect=True)
-                await asyncio.sleep(1.0)  # Wait longer for stable connection
+                print(f"ðŸŽ¤ Connected to voice, waiting for stabilization...")
+                # Railway needs more time for connection to stabilize before audio operations
+                await asyncio.sleep(2.0)  # Increased from 1.0s for remote server stability
                 if not voice_client.is_connected():
                     raise Exception("Voice client not connected after join")
+                print(f"âœ… Voice connection stable, ready for playback")
             except Exception as e:
                 error_msg = str(e) if str(e) else "Unable to join voice channel"
                 print(f"Play join error: {error_msg}")
-                return await ctx.send(f"❌ Can't join: {error_msg[:100]}")
+                return await ctx.send(f"âŒ Can't join: {error_msg[:100]}")
 
         async with ctx.typing():
             try:
@@ -355,47 +367,47 @@ class Music(commands.Cog):
                         info = info['entries'][0]
 
                     self.manager.queue.append(info)
-                    await ctx.send(f"✅ Added to queue: **{info['title']}**")
+                    await ctx.send(f"âœ… Added to queue: **{info['title']}**")
 
                     # Always try to play if queue has songs and no music is playing
                     voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
                     if voice_client and voice_client.is_connected():
                         # If nothing is currently playing, start immediately
                         if not voice_client.is_playing():
-                            print(f"🎵 Starting playback (queue has {len(self.manager.queue)} songs)")
+                            print(f"ðŸŽµ Starting playback (queue has {len(self.manager.queue)} songs)")
                             self.play_next(ctx.guild.id)
                         else:
-                            print(f"🎵 Music already playing, queued for later")
-                            await ctx.send("⏳ Added to queue, will play next!")
+                            print(f"ðŸŽµ Music already playing, queued for later")
+                            await ctx.send("â³ Added to queue, will play next!")
                     else:
-                        print(f"❌ Voice client not connected after adding to queue")
+                        print(f"âŒ Voice client not connected after adding to queue")
                         
             except yt_dlp.utils.DownloadError as e:
                 if "Sign in to confirm you're not a bot" in str(e):
-                    await ctx.send("❌ YouTube is blocking this request. Try a different song or source.")
+                    await ctx.send("âŒ YouTube is blocking this request. Try a different song or source.")
                 else:
-                    await ctx.send(f"❌ YouTube error: {str(e)[:100]}")
+                    await ctx.send(f"âŒ YouTube error: {str(e)[:100]}")
             except Exception as e:
                 error_str = str(e).lower()
                 print(f"Play error: {str(e)}")
                 if "ffmpeg" in error_str or ".exe" in error_str:
-                    await ctx.send("❌ Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
+                    await ctx.send("âŒ Audio system not ready. FFmpeg may not be installed. Try again in a moment.")
                 elif "not found" in error_str:
-                    await ctx.send("❌ Song not found. Try a different search term.")
+                    await ctx.send("âŒ Song not found. Try a different search term.")
                 else:
-                    await ctx.send(f"❌ Error: {str(e)[:100]}")
+                    await ctx.send(f"âŒ Error: {str(e)[:100]}")
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx: commands.Context):
         """Displays the next 10 songs in the queue."""
         if not self.manager.queue:
-            return await ctx.send("The queue is currently empty! ☕")
+            return await ctx.send("The queue is currently empty! â˜•")
 
         description = ""
         for i, song in enumerate(self.manager.queue[:10], 1):
             description += f"**{i}.** {song['title']}\n"
 
-        embed = discord.Embed(title="🎶 Current Queue", description=description, color=discord.Color.blue())
+        embed = discord.Embed(title="ðŸŽ¶ Current Queue", description=description, color=discord.Color.blue())
         await ctx.send(embed=embed)
 
     @commands.command(aliases=['s'])
@@ -403,7 +415,7 @@ class Music(commands.Cog):
         if not await self.check_voice_channels(ctx):
             return
         ctx.voice_client.stop()
-        await ctx.send("⏭️ Skipped!")
+        await ctx.send("â­ï¸ Skipped!")
 
     @commands.command()
     async def pause(self, ctx: commands.Context):
@@ -411,8 +423,8 @@ class Music(commands.Cog):
             return
         if ctx.voice_client.is_playing():
             ctx.voice_client.pause()
-            await self.update_vc_status("☕ Chilling...")
-            await ctx.send("⏸️ Paused.")
+            await self.update_vc_status("â˜• Chilling...")
+            await ctx.send("â¸ï¸ Paused.")
 
     @commands.command()
     async def resume(self, ctx: commands.Context):
@@ -421,8 +433,8 @@ class Music(commands.Cog):
         if ctx.voice_client.is_paused():
             ctx.voice_client.resume()
             if self.manager.current:
-                await self.update_vc_status(f"🔊 Playing now: {self.manager.current['title']}")
-            await ctx.send("▶️ Resumed.")
+                await self.update_vc_status(f"ðŸ”Š Playing now: {self.manager.current['title']}")
+            await ctx.send("â–¶ï¸ Resumed.")
 
     @commands.command(aliases=['leave', 'disconnect'])
     async def stop(self, ctx: commands.Context):
@@ -431,7 +443,7 @@ class Music(commands.Cog):
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         
         if not voice_client:
-            return await ctx.send("❌ I'm not in a voice channel!")
+            return await ctx.send("âŒ I'm not in a voice channel!")
         
         # Clear queue and stop music
         self.manager.queue.clear()
@@ -442,8 +454,8 @@ class Music(commands.Cog):
         
         # Disconnect
         await voice_client.disconnect(force=True)
-        await self.update_vc_status("☕ Chilling...")
-        await ctx.send("👋 Disconnected.")
+        await self.update_vc_status("â˜• Chilling...")
+        await ctx.send("ðŸ‘‹ Disconnected.")
 
     @commands.command(aliases=['v', 'vol'])
     async def volume(self, ctx: commands.Context, vol: int):
@@ -453,13 +465,13 @@ class Music(commands.Cog):
         self.manager.volume = vol / 100
         if ctx.voice_client.source:
             ctx.voice_client.source.volume = self.manager.volume
-        await ctx.send(f"🔊 Volume set to {vol}%")
+        await ctx.send(f"ðŸ”Š Volume set to {vol}%")
 
     @commands.command()
     async def join(self, ctx: commands.Context):
         """Join the voice channel."""
         if not ctx.author.voice:
-            return await ctx.send("❌ Join a VC first!")
+            return await ctx.send("âŒ Join a VC first!")
         
         target_channel = ctx.author.voice.channel
         
@@ -467,7 +479,7 @@ class Music(commands.Cog):
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if voice_client and voice_client.is_connected():
             if voice_client.channel == target_channel:
-                return await ctx.send("✅ Already in your channel!")
+                return await ctx.send("âœ… Already in your channel!")
             else:
                 # In different channel - just connect to new one (Discord will auto-disconnect old)
                 # Don't manually disconnect to avoid glitches
@@ -475,38 +487,40 @@ class Music(commands.Cog):
         
         # Try to join - Discord auto-disconnects from old channels
         try:
-            print(f"🎤 Joining {target_channel.name}...")
+            print(f"ðŸŽ¤ Joining {target_channel.name}...")
             voice_client = await target_channel.connect(timeout=10.0, reconnect=True)
             
-            # Wait for connection to stabilize
-            await asyncio.sleep(0.3)
+            # Railway needs more time for connection to be fully established
+            # Local dev was fast enough with 0.3s, but remote servers need 2.0s
+            print(f"ðŸŽ¤ Voice connected, waiting for stabilization...")
+            await asyncio.sleep(2.0)  # Increased from 0.3s for distributed server stability
             
             if not voice_client.is_connected():
-                await ctx.send("❌ Failed to connect to voice!")
+                await ctx.send("âŒ Failed to connect to voice!")
                 return
             
-            print(f"✅ Joined {target_channel.name}")
-            await self.update_vc_status("☕ Chilling...")
-            await ctx.send("✅ Joined!")
+            print(f"âœ… Joined {target_channel.name}")
+            await self.update_vc_status("â˜• Chilling...")
+            await ctx.send("âœ… Joined!")
             
         except asyncio.TimeoutError:
-            await ctx.send("❌ Connection timed out. Try again!")
-            print(f"❌ Join timeout for {target_channel.name}")
+            await ctx.send("âŒ Connection timed out. Try again!")
+            print(f"âŒ Join timeout for {target_channel.name}")
         except Exception as e:
             error_msg = str(e)[:80]
-            await ctx.send(f"❌ Can't join: {error_msg}")
-            print(f"❌ Join error: {error_msg}")
+            await ctx.send(f"âŒ Can't join: {error_msg}")
+            print(f"âŒ Join error: {error_msg}")
 
     @commands.command(aliases=['c'])
     async def clear(self, ctx: commands.Context):
         self.manager.queue.clear()
-        await ctx.send("🧹 Queue cleared!")
+        await ctx.send("ðŸ§¹ Queue cleared!")
 
     @commands.command(aliases=['np'])
     async def nowplaying(self, ctx: commands.Context):
         """Shows the currently playing song with player controls."""
         if not self.manager.current:
-            return await ctx.send("No song is currently playing! ☕")
+            return await ctx.send("No song is currently playing! â˜•")
         await self.send_now_playing(ctx)
 
     @commands.command()
@@ -516,7 +530,7 @@ class Music(commands.Cog):
         ffmpeg_path = shutil.which('ffmpeg')
         
         status = f"""
-🎵 **FFmpeg Debug Info:**
+ðŸŽµ **FFmpeg Debug Info:**
 - Detected path: `{FFMPEG_EXE or 'Not found'}`
 - In PATH: `{ffmpeg_path or 'Not found'}`
 - FFMPEG_OPTIONS: `{self.FFMPEG_OPTIONS}`
