@@ -1,7 +1,8 @@
 [[services]]
 name = "worker"
-builder = "nixpacks"
+dockerfile = "worker.Dockerfile"
+buildContext = "."
 
 [[services]]
 name = "web"
-builder = "railpack"
+# Web uses default Railpack builder
