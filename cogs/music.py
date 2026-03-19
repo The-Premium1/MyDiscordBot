@@ -238,41 +238,32 @@ class Music(commands.Cog):
 
     # Note: play_next is now guild-based and called via 'after' callback automatically
 
-    def play_next(self, guild_id: int):
-        """Play next song in queue using guild_id (not context-dependent)."""
+    async def play_next_async(self, guild_id: int):
+        """Async version of play_next - handles queue and playback."""
         m = self.manager
         
-        # Get voice client using guild_id (not context-specific)
         guild = self.bot.get_guild(guild_id)
         if not guild:
             print(f"âŒ Guild {guild_id} not found")
             return
         
         voice_client = discord.utils.get(self.bot.voice_clients, guild=guild)
-        if not voice_client:
-            print(f"âŒ No voice client for guild {guild_id}")
+        if not voice_client or not voice_client.is_connected():
+            print(f"âŒ Voice client not connected for guild {guild_id}")
             m.current = None
             return
         
-        # CRITICAL: Check if voice client is actually connected before playing
-        if not voice_client.is_connected():
-            print(f"âŒ Voice client exists but NOT CONNECTED for guild {guild_id}")
-            m.current = None
-            return
+        await asyncio.sleep(0.2)
         
-        # Small delay to ensure voice connection is truly ready before playback
-        time.sleep(0.2)
+        print(f"ðŸŽµ play_next_async called: queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
         
-        print(f"ðŸŽµ play_next called: queue_len={len(m.queue)}, is_playing={voice_client.is_playing()}")
-        
-        # Cleanup previous source if still exists
         try:
             if hasattr(voice_client, 'source') and voice_client.source:
                 voice_client.source.cleanup()
         except Exception as e:
             print(f"âš ï¸ Source cleanup error: {e}")
 
-        # 1. Handle Loop Modes
+        # Handle loop modes
         if m.current:
             if m.loop_mode == 1:
                 m.queue.insert(0, m.current)
@@ -280,21 +271,20 @@ class Music(commands.Cog):
                 m.queue.append(m.current)
             m.current = None
 
-        # 2. Play next song
+        # Play next song
         if len(m.queue) > 0:
             m.current = m.queue.pop(0)
             m.start_time = time.time()
 
             status_text = f"Playing: {m.current['title']}"
             print(f"ðŸŽµ {status_text}")
-            asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
+            await self.update_vc_status(status_text)
 
             try:
                 print(f"ðŸŽµ Creating audio source for: {m.current['title']}")
                 print(f"ðŸŽµ FFmpeg path: {FFMPEG_EXE}")
                 print(f"ðŸŽµ URL: {m.current['url'][:80]}...")
                 
-                # Create audio source with FFmpeg
                 source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
                     m.current['url'], 
                     **self.FFMPEG_OPTIONS
@@ -308,24 +298,28 @@ class Music(commands.Cog):
                         print(f"âŒ Playback error: {error}")
                     else:
                         print(f"âœ… Song finished, playing next...")
-                    self.play_next(guild_id)
+                    # Schedule next song in bot's event loop
+                    asyncio.run_coroutine_threadsafe(self.play_next_async(guild_id), self.bot.loop)
                 
                 voice_client.play(source, after=playback_finished)
                 print(f"âœ… Playback started for {m.current['title']}")
                 
-                asyncio.run_coroutine_threadsafe(self.update_vc_status(status_text), self.bot.loop)
             except Exception as e:
                 print(f"âŒ Play Error: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                asyncio.run_coroutine_threadsafe(self.update_vc_status("Chilling..."), self.bot.loop)
+                await self.update_vc_status("Chilling...")
                 m.current = None
                 if len(m.queue) > 0:
-                    self.play_next(guild_id)
+                    await self.play_next_async(guild_id)
         else:
             m.current = None
             print(f"ðŸŽµ Queue empty")
-            asyncio.run_coroutine_threadsafe(self.update_vc_status("Chilling..."), self.bot.loop)
+            await self.update_vc_status("Chilling...")
+
+    def play_next(self, guild_id: int):
+        """Wrapper to call async play_next from sync context"""
+        asyncio.run_coroutine_threadsafe(self.play_next_async(guild_id), self.bot.loop)
 
     async def send_now_playing(self, ctx: commands.Context):
         m = self.manager
