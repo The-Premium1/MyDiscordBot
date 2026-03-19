@@ -107,11 +107,24 @@ def init_db():
             user_id INTEGER,
             guild_id INTEGER,
             role TEXT,
+            joined_at TEXT,
             PRIMARY KEY (user_id, guild_id)
         )
     ''')
     
     conn.commit()
+    
+    # Migration: Add joined_at column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute("PRAGMA table_info(user_guilds)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'joined_at' not in columns:
+            cursor.execute("ALTER TABLE user_guilds ADD COLUMN joined_at TEXT DEFAULT NULL")
+            conn.commit()
+            print("✅ Migration: Added joined_at column to user_guilds")
+    except Exception as e:
+        print(f"⚠️ Migration skipped: {e}")
+    
     conn.close()
 
 init_db()
@@ -273,9 +286,9 @@ def callback():
             
             if is_admin or is_owner:
                 cursor.execute("""
-                    INSERT OR REPLACE INTO user_guilds (user_id, guild_id, role, joined_at)
-                    VALUES (?, ?, ?, ?)
-                """, (user_id, guild_id, 'owner' if is_owner else 'admin', datetime.now().isoformat()))
+                    INSERT OR REPLACE INTO user_guilds (user_id, guild_id, role)
+                    VALUES (?, ?, ?)
+                """, (user_id, guild_id, 'owner' if is_owner else 'admin'))
         
         conn.commit()
         conn.close()
@@ -313,7 +326,7 @@ def dashboard():
         return redirect(url_for('login'))
     
     print(f"✅ User {session.get('username')} accessing dashboard")
-    return render_template('dashboard-new.html')
+    return render_template('dashboard.html')
 
 # API Endpoints
 
