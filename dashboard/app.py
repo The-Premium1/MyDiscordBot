@@ -9,6 +9,16 @@ import secrets
 import requests
 from dotenv import load_dotenv
 import sys
+import logging
+
+# CRITICAL: Enable ALL logging to see what's happening
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+print("🔍 LOGGING ENABLED - DEBUG mode ON")
+print(f"📝 Python executable: {sys.executable}")
+print(f"🌍 Environment: PORT={os.environ.get('PORT', 'NOT SET')}")
 
 # Add parent directory to path to import bot connector
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,6 +34,7 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 SECRET_KEY = os.getenv('SECRET_KEY') or 'fixed-secret-key-for-sessions-12345'
 app.secret_key = SECRET_KEY
 
+print(f"✅ Flask app created")
 print(f"🔑 Using SECRET_KEY: {SECRET_KEY[:20]}...")
 
 # Configure sessions properly
