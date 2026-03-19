@@ -1,0 +1,7 @@
+[[services]]
+name = "worker"
+builder = "nixpacks"
+
+[[services]]
+name = "web"
+builder = "railpack"
