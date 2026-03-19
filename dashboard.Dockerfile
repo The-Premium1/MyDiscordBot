@@ -7,4 +7,6 @@ COPY dashboard/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "-u", "app.py"]
+# CRITICAL: Use gunicorn, NOT Flask directly
+# Flask's PORT parsing crashes on Railway
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
