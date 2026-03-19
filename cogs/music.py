@@ -59,8 +59,16 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.manager = MusicManager()
-        # Enable warnings to catch YouTube issues - helps with debugging on Railway
-        self.YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': False, 'no-warnings': False}
+        # Add proper User-Agent to bypass YouTube bot detection
+        self.YDL_OPTIONS = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': False,
+            'no-warnings': False,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        }
         
         # Build FFMPEG options - only set executable if explicitly found
         self.FFMPEG_OPTIONS = {
@@ -376,8 +384,12 @@ class Music(commands.Cog):
                     print(f"âŒ Attempt {attempt + 1} failed: {str(e)}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(1.0)
-                    else:
-                        error_msg = str(e) if str(e) else "Unable to join voice channel"
+                    else:                        # Bot may have already joined despite error, so don't show error
+                        # The 4006 error is a Discord gateway issue that doesn't always prevent joining
+                        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+                        if voice_client and voice_client.is_connected():
+                            print(f"Voice client connected despite error")
+                            break                        error_msg = str(e) if str(e) else "Unable to join voice channel"
                         print(f"Play join error: {error_msg}")
                         return await ctx.send(f"Can't join: {error_msg[:100]}")
 
