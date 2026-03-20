@@ -283,15 +283,7 @@ class Music(commands.Cog):
         await ctx.send("🧹 Queue cleared!")
 
     @commands.command()
-    async def ping(self, ctx: commands.Context):
-        """Check connection latency."""
-        if ctx.voice_client and ctx.voice_client.is_connected():
-            latency = ctx.voice_client.latency
-            await ctx.send(f"🏓 Pong! Voice latency: {latency*1000:.0f}ms")
-        else:
-            await ctx.send("❌ Not connected to voice!")
 
-    @commands.command()
     async def vc_status(self, ctx: commands.Context):
         """Show voice connection status."""
         vc = ctx.voice_client
