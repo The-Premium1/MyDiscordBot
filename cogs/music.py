@@ -32,7 +32,7 @@ if not FFMPEG_EXE:
     if os.path.exists(local_path):
         FFMPEG_EXE = local_path
 
-print(f"🎵 FFmpeg Detection: {FFMPEG_EXE or 'NOT FOUND'}")
+print(f"🎵 FFmpeg: {FFMPEG_EXE or 'NOT FOUND'}")
 
 
 class MusicManager:
@@ -74,7 +74,7 @@ class Music(commands.Cog):
         if FFMPEG_EXE:
             self.FFMPEG_OPTIONS['executable'] = FFMPEG_EXE
         
-        print(f"🎵 Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
+        print(f"✅ Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}", flush=True)
 
     async def check_voice_channels(self, ctx: commands.Context) -> bool:
         if not ctx.voice_client:
@@ -314,4 +314,11 @@ class Music(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Music(bot))
+    print("🔧 Loading Music cog...", flush=True)
+    try:
+        await bot.add_cog(Music(bot))
+        print("✅ Music cog loaded!", flush=True)
+    except Exception as e:
+        print(f"❌ Failed to load Music cog: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
