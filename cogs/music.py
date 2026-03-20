@@ -76,15 +76,6 @@ class Music(commands.Cog):
         
         print(f"🎵 Music Cog Ready - FFmpeg: {FFMPEG_EXE or 'system default'}")
 
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        """Track voice state changes for debugging."""
-        if member.id == self.bot.user.id:
-            if after.channel:
-                print(f"✅ BOT VOICE STATE: Connected to {after.channel.name} in {member.guild.name}")
-            else:
-                print(f"📵 BOT VOICE STATE: Disconnected from {before.channel.name if before.channel else 'unknown'}")
-
     async def check_voice_channels(self, ctx: commands.Context) -> bool:
         if not ctx.voice_client:
             await ctx.send("🎧 I'm not in a voice channel!")
